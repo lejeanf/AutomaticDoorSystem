@@ -1,6 +1,6 @@
 {
   "name": "fr.jeanf.automaticdoorsystem",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "displayName": "Automatic Door System",
   "description": "A high-performance automatic door system using Unity ECS (Entities) with pooled audio and colliders.\nSupports rotating and sliding doors, single and double configurations.\nFeatures   distance-based culling, object pooling for AudioSources and BoxColliders, and seamless subscene integration for optimal performance with hundreds of doors.",
   "unity": "6000.0",
@@ -19,10 +19,10 @@
     "url": "https://jeanfrancoisrobin.art"
   },
   "dependencies": {
-    "fr.jeanf.eventsystem": "0.1.121",
-    "fr.jeanf.scenemanagement": "1.0.0",
-    "com.unity.entities": "1.3.9",
-    "com.unity.entities.graphics": "1.3.2"
+    "fr.jeanf.eventsystem": "0.1.124",
+    "fr.jeanf.scenemanagement": "0.7.14",
+    "com.unity.entities": "1.4.4",
+    "com.unity.entities.graphics": "1.4.17"
   },
   "samples": [
     {
