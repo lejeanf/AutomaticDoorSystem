@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 40b9abc22399178419a46e24ad16679d, type: 3}
+  m_Name: DoorConfig_DoubleRotating_Forward
+  m_EditorClassIdentifier: 
+  doorMovement: 0
+  doorCount: 1
+  openingStyle: 0
+  oneWayDirection: {x: 0, y: 0, z: 1}
+  openForwardAngle: 90
+  openBackwardAngle: -90
+  slideOpenOffset: {x: 1.5, y: 0, z: 0}
+  animationDuration: 1
+  autoCloseDelay: 1.5
+  canOpenLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  startLocked: 0
+  regionReference: {fileID: 11400000, guid: 1df086a97b2a5c14eab309dd2eb407c0, type: 2}
+  shouldAlwaysCheck: 0

@@ -1,0 +1,26 @@
+{
+    "name": "AutomaticDoorSystem",
+    "rootNamespace": "AutomaticDoorSystem",
+    "references": [
+        "Unity.Entities",
+        "Unity.Transforms",
+        "Unity.Collections",
+        "Unity.Burst",
+        "Unity.Mathematics",
+        "Unity.Mathematics.Extensions",
+        "Unity.Entities.Hybrid",
+        "jeanf.scenemanagement",
+        "jeanf.propertyDrawer",
+        "jeanf.eventsystem",
+        "Unity.Entities.Graphics"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

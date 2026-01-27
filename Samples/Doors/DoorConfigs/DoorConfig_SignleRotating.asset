@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 40b9abc22399178419a46e24ad16679d, type: 3}
+  m_Name: DoorConfig_SignleRotating
+  m_EditorClassIdentifier: 
+  doorMovement: 0
+  doorCount: 0
+  openForwardAngle: 90
+  openBackwardAngle: -90
+  slideOpenOffset: {x: 1.5, y: 0, z: 0}
+  animationDuration: 1
+  autoCloseDelay: 1.5
+  canOpenLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  startLocked: 0
+  regionReference: {fileID: 11400000, guid: eb0ebeedcc13bb247809af725314cfbf, type: 2}
+  shouldAlwaysCheck: 1
