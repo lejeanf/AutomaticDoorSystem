@@ -75,19 +75,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 1677530962403547400}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d18c7e74124d3a341b44fe502cad1d45, type: 3}
+  m_Script: {fileID: 11500000, guid: 1e2676c5912cc8e4b92bf9a659a90fcb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  doorAudioSources:
-  - {fileID: 0}
-  openSoundClips:
-  - {fileID: 8300000, guid: dba801f83b62d0a4f8a2987a0910d513, type: 3}
-  closeSoundClips:
-  - {fileID: 8300000, guid: 564178beafda6954c9d687e972bd242d, type: 3}
-  lockSoundClips:
-  - {fileID: 8300000, guid: 5d05cd2f32375154190e5a169484f2e6, type: 3}
-  unlockSoundClips:
-  - {fileID: 8300000, guid: 5d05cd2f32375154190e5a169484f2e6, type: 3}
+  fallbackOpenClip: {fileID: 0}
+  fallbackCloseClip: {fileID: 0}
+  fallbackLockClip: {fileID: 0}
+  fallbackUnlockClip: {fileID: 0}
 --- !u!1 &2974533751650212988
 GameObject:
   m_ObjectHideFlags: 0
@@ -166,7 +160,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b4abaa4bc64166341a724f30c325c2ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  TestChannel: {fileID: 11400000, guid: de6a6cad754d8bf4cb67b70c2479cf91, type: 2}
+  TestChannel: {fileID: 11400000, guid: e2f7e5b41f392494e84364dd2d03bf7b, type: 2}
   messageToSend: 104
 --- !u!114 &6979742790634497981
 MonoBehaviour:
@@ -181,7 +175,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _isDebug: 0
-  intMessageChannel: {fileID: 11400000, guid: de6a6cad754d8bf4cb67b70c2479cf91, type: 2}
+  intMessageChannel: {fileID: 11400000, guid: e2f7e5b41f392494e84364dd2d03bf7b, type: 2}
 --- !u!1 &5319919556833434482
 GameObject:
   m_ObjectHideFlags: 0
@@ -223,12 +217,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 5319919556833434482}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 00a6a4f77465e5f409a12188dbc88145, type: 3}
+  m_Script: {fileID: 11500000, guid: 3eee8d21aeee1754baa274808f796930, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  isDebug: 0
-  lockEventChannel: {fileID: 11400000, guid: de6a6cad754d8bf4cb67b70c2479cf91, type: 2}
-  unlockEventChannel: {fileID: 11400000, guid: 571a4b7c7b981b14baca43ac31801696, type: 2}
+  lockEventChannel: {fileID: 11400000, guid: e2f7e5b41f392494e84364dd2d03bf7b, type: 2}
+  unlockEventChannel: {fileID: 11400000, guid: 4a4e5029f921d954889d0b749b3bfed0, type: 2}
 --- !u!1 &6847008809418153450
 GameObject:
   m_ObjectHideFlags: 0
@@ -274,7 +267,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b4abaa4bc64166341a724f30c325c2ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  TestChannel: {fileID: 11400000, guid: 571a4b7c7b981b14baca43ac31801696, type: 2}
+  TestChannel: {fileID: 11400000, guid: 4a4e5029f921d954889d0b749b3bfed0, type: 2}
   messageToSend: 104
 --- !u!114 &3544053384388412999
 MonoBehaviour:
@@ -289,4 +282,4 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _isDebug: 0
-  intMessageChannel: {fileID: 11400000, guid: 571a4b7c7b981b14baca43ac31801696, type: 2}
+  intMessageChannel: {fileID: 11400000, guid: 4a4e5029f921d954889d0b749b3bfed0, type: 2}

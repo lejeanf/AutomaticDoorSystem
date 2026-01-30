@@ -18,13 +18,13 @@ MonoBehaviour:
   maxDistance: 25
   rolloffMode: 1
   openSoundClips:
-  - {fileID: 8300000, guid: dba801f83b62d0a4f8a2987a0910d513, type: 3}
+  - {fileID: 8300000, guid: 179da19bc70edd345ac94dfa7c4c51ae, type: 3}
   closeSoundClips:
-  - {fileID: 8300000, guid: 564178beafda6954c9d687e972bd242d, type: 3}
+  - {fileID: 8300000, guid: d067c91668d288045aed159e0c092f58, type: 3}
   lockSoundClips:
-  - {fileID: 8300000, guid: 5d05cd2f32375154190e5a169484f2e6, type: 3}
+  - {fileID: 8300000, guid: 3a1f7f1a326a85e4693e33039a848c04, type: 3}
   unlockSoundClips:
-  - {fileID: 8300000, guid: 5d05cd2f32375154190e5a169484f2e6, type: 3}
+  - {fileID: 8300000, guid: 3a1f7f1a326a85e4693e33039a848c04, type: 3}
   useSteamAudio: 1
   enableHRTF: 1
   enableOcclusion: 1
