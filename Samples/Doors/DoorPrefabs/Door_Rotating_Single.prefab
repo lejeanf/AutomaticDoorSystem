@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 3621779203600427912}
   - component: {fileID: 7728883297108931986}
   m_Layer: 0
-  m_Name: Door_SingleRotating
+  m_Name: Door_Rotating_Single
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -43,7 +43,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 6287915621418545531}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2884e9e2687a0d440b6f1d3321ff0edf, type: 3}
+  m_Script: {fileID: 11500000, guid: f25c8b15ed06fae4a95ef4c434f13a98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   doorId: 0
@@ -52,7 +52,7 @@ MonoBehaviour:
   rightDoorMesh: {fileID: 0}
   triggerVolumeObject: {fileID: 6607673918005409354}
   enableDebug: 0
-  doorConfig: {fileID: 11400000, guid: 34f0aa980c03f704e98bc6c8bdbd9d07, type: 2}
+  doorConfig: {fileID: 11400000, guid: a86be492ab3871b46901d646d4b08b20, type: 2}
 --- !u!1 &6336704448369054907
 GameObject:
   m_ObjectHideFlags: 0
@@ -119,7 +119,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100004, guid: 5d99170346720004e81354b0000c797c, type: 3}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -238,8 +238,8 @@ MonoBehaviour:
   m_GameObject: {fileID: 8450475187364891193}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 20d5b01cf9468c0428decc1976b21423, type: 3}
+  m_Script: {fileID: 11500000, guid: f05cf899f84288845a954b1790f92027, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  volumeSize: {x: 3, y: 3, z: 3}
-  volumeCenter: {x: 0, y: 1.5, z: 1.5}
+  volumeSize: {x: 1, y: 3, z: 3}
+  volumeCenter: {x: 0.5, y: 1.5, z: 1.5}

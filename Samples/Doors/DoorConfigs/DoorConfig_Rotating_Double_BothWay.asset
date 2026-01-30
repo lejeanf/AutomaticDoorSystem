@@ -9,8 +9,8 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 40b9abc22399178419a46e24ad16679d, type: 3}
-  m_Name: DoorConfig_DoubleRotating_BothWay
+  m_Script: {fileID: 11500000, guid: c17266d97555c8f4d905a5e24a562afa, type: 3}
+  m_Name: DoorConfig_Rotating_Double_BothWay
   m_EditorClassIdentifier: 
   doorMovement: 0
   doorCount: 1
@@ -19,11 +19,9 @@ MonoBehaviour:
   openForwardAngle: 90
   openBackwardAngle: -90
   slideOpenOffset: {x: 1.5, y: 0, z: 0}
-  animationDuration: 1
-  autoCloseDelay: 1.5
+  animationDuration: 1.5
+  autoCloseDelay: 3
   canOpenLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
   startLocked: 0
-  regionReference: {fileID: 11400000, guid: 1df086a97b2a5c14eab309dd2eb407c0, type: 2}
-  shouldAlwaysCheck: 0
