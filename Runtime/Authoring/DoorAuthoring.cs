@@ -62,32 +62,9 @@ namespace AutomaticDoorSystem
                 DrawSlidingDoorGizmos(isDouble);
             }
 
-            DrawTriggerVolumeGizmo();
-
             if (enableDebug)
             {
                 DrawDebugInfo();
-            }
-        }
-
-        private void DrawTriggerVolumeGizmo()
-        {
-            if (triggerVolumeObject != null)
-            {
-                var volumeAuthoring = triggerVolumeObject.GetComponent<DoorTriggerVolumeAuthoring>();
-                if (volumeAuthoring != null)
-                {
-                    Vector3 triggerSize = volumeAuthoring.volumeSize;
-                    Vector3 triggerCenter = volumeAuthoring.volumeCenter;
-
-                    Gizmos.color = enableDebug ? new Color(0f, 1f, 0f, 0.3f) : new Color(1f, 1f, 0f, 0.2f);
-                    Gizmos.matrix = triggerVolumeObject.localToWorldMatrix;
-                    Gizmos.DrawCube(triggerCenter, triggerSize);
-
-                    Gizmos.color = enableDebug ? Color.green : Color.yellow;
-                    Gizmos.DrawWireCube(triggerCenter, triggerSize);
-                    Gizmos.matrix = Matrix4x4.identity;
-                }
             }
         }
 
@@ -184,45 +161,51 @@ namespace AutomaticDoorSystem
             {
                 var openingStyle = doorConfig.openingStyle;
 
+                float leftWidth = GetDoorWidth(leftDoorMesh);
+                float rightWidth = GetDoorWidth(rightDoorMesh);
+
                 switch (openingStyle)
                 {
                     case DoorConfig.OpeningStyle.Forward:
                         if (leftDoorMesh != null)
                         {
-                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openForwardAngle, Color.green, "Forward L", true);
-                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openBackwardAngle, Color.red, "Backward L", true);
+                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openForwardAngle, Color.green, "Forward L", true, leftWidth);
+                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openBackwardAngle, Color.red, "Backward L", true, leftWidth);
                         }
                         if (rightDoorMesh != null)
                         {
-                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openForwardAngle, Color.green, "Forward R", false);
-                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openBackwardAngle, Color.red, "Backward R", false);
+                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openForwardAngle, Color.green, "Forward R", false, rightWidth);
+                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openBackwardAngle, Color.red, "Backward R", false, rightWidth);
                         }
                         break;
 
                     case DoorConfig.OpeningStyle.BothWay:
                         if (leftDoorMesh != null)
                         {
-                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openForwardAngle, Color.cyan, "Forward L", true);
+                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openForwardAngle, Color.cyan, "Forward L", true, leftWidth);
                         }
                         if (rightDoorMesh != null)
                         {
-                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openForwardAngle, Color.cyan, "Forward R", false);
+                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openForwardAngle, Color.cyan, "Forward R", false, rightWidth);
                         }
                         break;
 
                     case DoorConfig.OpeningStyle.OneWay:
                         bool useForward = doorConfig.oneWayDirection.z >= 0;
-                        float angle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
-                        Color arcColor = useForward ? new Color(1f, 0.5f, 0f) : Color.magenta; // Orange for backward, magenta for forward
-                        string directionLabel = useForward ? "Backward (OneWay)" : "Forward (OneWay)";
+                        float leftAngle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
+                        float rightAngle = useForward ? doorConfig.openForwardAngle : doorConfig.openBackwardAngle;
+                        Color leftColor = useForward ? new Color(1f, 0.5f, 0f) : Color.magenta; // Orange for backward, magenta for forward
+                        Color rightColor = useForward ? Color.magenta : new Color(1f, 0.5f, 0f); // Opposite of left
+                        string leftLabel = useForward ? "Backward (OneWay)" : "Forward (OneWay)";
+                        string rightLabel = useForward ? "Forward (OneWay)" : "Backward (OneWay)";
 
                         if (leftDoorMesh != null)
                         {
-                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, angle, arcColor, directionLabel + " L", true);
+                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, leftAngle, leftColor, leftLabel + " L", true, leftWidth);
                         }
                         if (rightDoorMesh != null)
                         {
-                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, angle, arcColor, directionLabel + " R", false);
+                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, rightAngle, rightColor, rightLabel + " R", false, rightWidth);
                         }
                         break;
                 }
@@ -232,12 +215,13 @@ namespace AutomaticDoorSystem
                 var openingStyle = doorConfig.openingStyle;
                 Vector3 doorPosition = doorMesh != null ? doorMesh.position : transform.position;
                 Quaternion doorRotation = doorMesh != null ? doorMesh.rotation : transform.rotation;
+                float singleDoorWidth = GetDoorWidth(doorMesh);
 
                 switch (openingStyle)
                 {
                     case DoorConfig.OpeningStyle.Forward:
-                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openForwardAngle, Color.green, "Forward");
-                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openBackwardAngle, Color.red, "Backward");
+                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openForwardAngle, Color.green, "Forward", singleDoorWidth);
+                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openBackwardAngle, Color.red, "Backward", singleDoorWidth);
                         break;
 
                     case DoorConfig.OpeningStyle.OneWay:
@@ -245,22 +229,53 @@ namespace AutomaticDoorSystem
                         float angle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
                         Color arcColor = useForward ? new Color(1f, 0.5f, 0f) : Color.magenta; // Orange for backward, magenta for forward
                         string directionLabel = useForward ? "Backward (OneWay)" : "Forward (OneWay)";
-                        DrawRotationArc(doorPosition, doorRotation, angle, arcColor, directionLabel);
+                        DrawRotationArc(doorPosition, doorRotation, angle, arcColor, directionLabel, singleDoorWidth);
                         break;
 
                     case DoorConfig.OpeningStyle.BothWay:
-                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openForwardAngle, Color.green, "Forward");
-                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openBackwardAngle, Color.red, "Backward");
+                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openForwardAngle, Color.green, "Forward", singleDoorWidth);
+                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openBackwardAngle, Color.red, "Backward", singleDoorWidth);
                         break;
                 }
             }
         }
 
-        private void DrawRotationArcForDoubleDoor(Vector3 position, Quaternion rotation, float angle, Color color, string label, bool isLeftDoor)
+        private float GetDoorWidth(Transform doorTransform)
+        {
+            if (doorTransform == null) return 1.5f;
+
+            // Try BoxCollider first (most accurate for door panels)
+            var boxCollider = doorTransform.GetComponent<BoxCollider>();
+            if (boxCollider == null)
+            {
+                boxCollider = doorTransform.GetComponentInChildren<BoxCollider>();
+            }
+
+            if (boxCollider != null)
+            {
+                // Door width is typically local X, accounting for scale
+                return boxCollider.size.x * doorTransform.lossyScale.x;
+            }
+
+            // Fallback to renderer bounds
+            var renderer = doorTransform.GetComponent<Renderer>();
+            if (renderer == null)
+            {
+                renderer = doorTransform.GetComponentInChildren<Renderer>();
+            }
+
+            if (renderer != null)
+            {
+                return renderer.bounds.size.x;
+            }
+
+            return 1.5f;
+        }
+
+        private void DrawRotationArcForDoubleDoor(Vector3 position, Quaternion rotation, float angle, Color color, string label, bool isLeftDoor, float arcRadius)
         {
             Gizmos.color = color;
 
-            float arcRadius = 1.5f; 
             int segments = 20;
 
             float actualAngle = isLeftDoor ? -angle : angle;
@@ -287,18 +302,16 @@ namespace AutomaticDoorSystem
 #endif
         }
 
-        private void DrawRotationArc(Vector3 position, Quaternion rotation, float angle, Color color, string label)
+        private void DrawRotationArc(Vector3 position, Quaternion rotation, float angle, Color color, string label, float arcRadius)
         {
             Gizmos.color = color;
             Gizmos.color = new Color(color.r, color.g, color.b, 0.5f);
-            float doorwayLineLength = 1f;
+            float doorwayLineLength = arcRadius;
             Vector3 doorwayDir = rotation * Vector3.forward;
             Gizmos.DrawLine(position - doorwayDir * doorwayLineLength * 0.5f,
                            position + doorwayDir * doorwayLineLength * 0.5f);
 
             Gizmos.color = color;
-
-            float arcRadius = 1.5f;
             int segments = 15;
             float angleStep = angle / segments;
 
@@ -326,26 +339,35 @@ namespace AutomaticDoorSystem
         {
             if (doorConfig == null) return;
 
+            // Transform offset to match what the animation system does:
+            // Baker converts world offset to local, animation applies in local space
+            // For gizmo, we need the world-space result of that local offset
+            Vector3 localOffset = transform.InverseTransformVector(doorConfig.slideOpenOffset);
+            Vector3 worldOffset = transform.TransformVector(localOffset);
+
             if (isDouble)
             {
                 if (leftDoorMesh != null)
                 {
-                    DrawSlideArrow(leftDoorMesh.position, doorConfig.slideOpenOffset, Color.cyan);
+                    DrawSlideArrow(leftDoorMesh.position, worldOffset, Color.cyan);
                 }
                 if (rightDoorMesh != null)
                 {
-                    DrawSlideArrow(rightDoorMesh.position, new Vector3(-doorConfig.slideOpenOffset.x, doorConfig.slideOpenOffset.y, doorConfig.slideOpenOffset.z), Color.cyan);
+                    // Right door uses negated X in local space (matches animation system)
+                    Vector3 rightLocalOffset = new Vector3(-localOffset.x, localOffset.y, localOffset.z);
+                    Vector3 rightWorldOffset = transform.TransformVector(rightLocalOffset);
+                    DrawSlideArrow(rightDoorMesh.position, rightWorldOffset, Color.cyan);
                 }
             }
             else
             {
                 if (doorMesh != null)
                 {
-                    DrawSlideArrow(doorMesh.position, doorConfig.slideOpenOffset, Color.cyan);
+                    DrawSlideArrow(doorMesh.position, worldOffset, Color.cyan);
                 }
                 else
                 {
-                    DrawSlideArrow(transform.position, doorConfig.slideOpenOffset, Color.cyan);
+                    DrawSlideArrow(transform.position, worldOffset, Color.cyan);
                 }
             }
         }
@@ -551,7 +573,6 @@ namespace AutomaticDoorSystem
 
             private (float3 size, float3 center, byte hasData) ExtractColliderData(Transform panelTransform)
             {
-                // Look for BoxCollider on the panel or its children
                 var boxCollider = panelTransform.GetComponent<BoxCollider>();
                 if (boxCollider == null)
                 {
@@ -568,7 +589,6 @@ namespace AutomaticDoorSystem
                     );
                 }
 
-                // No collider found - return defaults
                 return (new float3(1f, 2.5f, 0.1f), new float3(0.5f, 1.25f, 0f), 0);
             }
 
@@ -607,14 +627,7 @@ namespace AutomaticDoorSystem
                     data.OpeningStyle = (OpeningStyle)config.openingStyle;
 
                     var oneWayDir = config.oneWayDirection;
-                    if (oneWayDir.sqrMagnitude > 0.0001f)
-                    {
-                        oneWayDir = oneWayDir.normalized;
-                    }
-                    else
-                    {
-                        oneWayDir = Vector3.forward;
-                    }
+                    oneWayDir = oneWayDir.sqrMagnitude > 0.0001f ? oneWayDir.normalized : Vector3.forward;
                     data.OneWayDirection = new float3(oneWayDir.x, oneWayDir.y, oneWayDir.z);
 
                     data.SlideOffset = float3.zero;

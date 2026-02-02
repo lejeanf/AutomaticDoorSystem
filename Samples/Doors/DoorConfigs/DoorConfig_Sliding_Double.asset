@@ -18,7 +18,7 @@ MonoBehaviour:
   oneWayDirection: {x: 0, y: 0, z: 1}
   openForwardAngle: 90
   openBackwardAngle: -90
-  slideOpenOffset: {x: 1.5, y: 0, z: 0}
+  slideOpenOffset: {x: 1, y: 0, z: 0}
   animationDuration: 1.5
   autoCloseDelay: 3
   canOpenLayerMask:

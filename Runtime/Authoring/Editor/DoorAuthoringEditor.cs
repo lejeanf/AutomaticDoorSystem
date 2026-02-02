@@ -66,7 +66,6 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.Space();
 
-            // Show DoorConfig reference first
             EditorGUILayout.LabelField("Shared Behavior Configuration", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(doorConfigProp, new GUIContent("Door Config"));
 

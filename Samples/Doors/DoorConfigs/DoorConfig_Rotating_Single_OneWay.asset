@@ -15,7 +15,7 @@ MonoBehaviour:
   doorMovement: 0
   doorCount: 0
   openingStyle: 2
-  oneWayDirection: {x: 0, y: 0, z: 1}
+  oneWayDirection: {x: 0, y: 0, z: -1}
   openForwardAngle: 90
   openBackwardAngle: -90
   slideOpenOffset: {x: 1.5, y: 0, z: 0}

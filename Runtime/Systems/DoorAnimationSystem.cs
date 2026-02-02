@@ -73,33 +73,38 @@ namespace AutomaticDoorSystem
         }
 
         [BurstCompile]
-        private static quaternion GetTargetRotation(
+        private static void GetTargetRotation(
             in DoorTransformData transformData,
             in DoorStateComponent doorState,
+            out quaternion result,
             bool isLeftDoor = false)
         {
             switch (transformData.OpeningStyle)
             {
                 case OpeningStyle.Forward:
-                    return doorState.DirectionForward == 1
+                    result = doorState.DirectionForward == 1
                         ? transformData.OpenRotationForward
                         : transformData.OpenRotationBackward;
+                    break;
 
                 case OpeningStyle.OneWay:
                     bool useForwardRotation = transformData.OneWayDirection.z >= 0;
-                    return useForwardRotation
+                    result = useForwardRotation
                         ? transformData.OpenRotationBackward
                         : transformData.OpenRotationForward;
+                    break;
 
                 case OpeningStyle.BothWay:
-                    return doorState.DirectionForward == 1
+                    result = doorState.DirectionForward == 1
                         ? transformData.OpenRotationForward
                         : transformData.OpenRotationBackward;
+                    break;
 
                 default:
-                    return doorState.DirectionForward == 1
+                    result = doorState.DirectionForward == 1
                         ? transformData.OpenRotationForward
                         : transformData.OpenRotationBackward;
+                    break;
             }
         }
 
@@ -140,10 +145,10 @@ namespace AutomaticDoorSystem
         }
 
         [BurstCompile]
-        private static quaternion GetMirroredRotation(in quaternion rotation)
+        private static void GetMirroredRotation(in quaternion rotation, out quaternion result)
         {
             var euler = ((Quaternion)rotation).eulerAngles;
-            return Quaternion.Euler(euler.x, -euler.y, euler.z);
+            result = Quaternion.Euler(euler.x, -euler.y, euler.z);
         }
 
         [BurstCompile]
@@ -160,7 +165,7 @@ namespace AutomaticDoorSystem
                         ? transformData.OpenRotationBackward
                         : transformData.OpenRotationForward;
                     leftRotation = baseRotation;
-                    rightRotation = GetMirroredRotation(in baseRotation);
+                    GetMirroredRotation(in baseRotation, out rightRotation);
                     break;
 
                 case OpeningStyle.BothWay:
@@ -174,7 +179,7 @@ namespace AutomaticDoorSystem
                         ? transformData.OpenRotationBackward
                         : transformData.OpenRotationForward;
                     leftRotation = oneWayRotation;
-                    rightRotation = GetMirroredRotation(in oneWayRotation);
+                    GetMirroredRotation(in oneWayRotation, out rightRotation);
                     break;
 
                 default:
@@ -182,7 +187,7 @@ namespace AutomaticDoorSystem
                         ? transformData.OpenRotationBackward
                         : transformData.OpenRotationForward;
                     leftRotation = defaultRotation;
-                    rightRotation = GetMirroredRotation(in defaultRotation);
+                    GetMirroredRotation(in defaultRotation, out rightRotation);
                     break;
             }
         }
@@ -200,7 +205,7 @@ namespace AutomaticDoorSystem
                 return;
 
             var easedProgress = CalculateEasedProgress(doorState.StateTimer, door.AnimationDuration);
-            var targetRotation = GetTargetRotation(in transformData, in doorState);
+            GetTargetRotation(in transformData, in doorState, out quaternion targetRotation);
             var isOpening = doorState.CurrentState == DoorState.Opening;
 
             for (var i = 0; i < doorBuffer.Length; i++)
