@@ -2,9 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using SteamAudio;
+using Vector3 = UnityEngine.Vector3;
 
 namespace AutomaticDoorSystem
 {
+    [DefaultExecutionOrder(-50)]
     public class AudioSourcePoolManager : MonoBehaviour
     {
         public static AudioSourcePoolManager Instance { get; private set; }
@@ -49,7 +52,7 @@ namespace AutomaticDoorSystem
 
         #region Private Fields
         private Transform _cameraTransform;
-        private Vector3 _playerPosition;
+        private UnityEngine.Vector3 _playerPosition;
         private List<DoorIdentifier> _currentDoorList;
         private AudioSource[] _audioSourcePool;
         private Transform _poolContainer;
@@ -67,7 +70,7 @@ namespace AutomaticDoorSystem
         private struct DoorDistanceInfo
         {
             public int doorNumber;
-            public Vector3 position;
+            public UnityEngine.Vector3 position;
             public float sqrDistance;
             public DoorIdentifier identifier; 
         }
@@ -75,6 +78,7 @@ namespace AutomaticDoorSystem
         private struct PooledAudioSourceState
         {
             public AudioSource audioSource;
+            public SteamAudioSource steamAudioSource;
             public int assignedDoorNumber;
             public float targetVolume;
             public Coroutine fadeCoroutine;
@@ -206,9 +210,12 @@ namespace AutomaticDoorSystem
 
                 _audioSourcePool[i] = audioSource;
 
+                var steamAudioSource = audioSourceObj.GetComponent<SteamAudioSource>();
+
                 _poolStates[i] = new PooledAudioSourceState
                 {
                     audioSource = audioSource,
+                    steamAudioSource = steamAudioSource,
                     assignedDoorNumber = -1,
                     targetVolume = 1f,
                     fadeCoroutine = null,
@@ -421,6 +428,16 @@ namespace AutomaticDoorSystem
             if (state.assignedDoorNumber == doorInfo.doorNumber)
             {
                 state.audioSource.transform.position = doorInfo.position;
+
+                if (DoorAudioBridge.Instance != null && doorInfo.identifier != null)
+                {
+                    var lateConfig = doorInfo.identifier.GetAudioConfiguration();
+                    if (lateConfig != null)
+                    {
+                        DoorAudioBridge.Instance.RegisterAudioSource(doorInfo.doorNumber, state.audioSource, lateConfig);
+                    }
+                }
+
                 return;
             }
 
@@ -439,6 +456,10 @@ namespace AutomaticDoorSystem
             {
                 state.targetVolume = config.volume;
                 config.ApplyToAudioSource(state.audioSource);
+                if (state.steamAudioSource != null)
+                {
+                    config.ApplyToSteamAudioSource(state.steamAudioSource);
+                }
             }
             else
             {

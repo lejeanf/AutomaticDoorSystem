@@ -25,3 +25,4 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   startLocked: 0
+  audioConfiguration: {fileID: 11400000, guid: e56d7082c665b9847bc0d3633f7e9158, type: 2}

@@ -11,7 +11,6 @@ namespace AutomaticDoorSystem
         {
             DoorIdentifier identifier = (DoorIdentifier)target;
 
-            // Show door number label
             Handles.Label(identifier.transform.position + Vector3.up * 2.5f,
                 $"Door {identifier.doorNumber}",
                 new GUIStyle()

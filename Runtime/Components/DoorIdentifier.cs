@@ -7,16 +7,15 @@ namespace AutomaticDoorSystem
         [Tooltip("The door number this AudioSource is associated with (must match door's DoorId)")]
         public int doorNumber;
 
-        [Header("Audio Configuration")]
-        [Tooltip("Audio configuration ScriptableObject for this door (optional - uses default settings if not set)")]
+        [Tooltip("Audio configuration for this door. Required since DoorAuthoring in subscenes doesn't exist at runtime.")]
         public DoorAudioConfiguration audioConfiguration;
+
+        private bool _isRegistered = false;
 
         public DoorAudioConfiguration GetAudioConfiguration()
         {
             return audioConfiguration;
         }
-
-        private bool _isRegistered = false;
 
         private void OnEnable()
         {

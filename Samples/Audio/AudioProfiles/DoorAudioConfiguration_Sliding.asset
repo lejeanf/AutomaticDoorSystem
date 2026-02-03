@@ -26,9 +26,29 @@ MonoBehaviour:
   unlockSoundClips:
   - {fileID: 8300000, guid: 3a1f7f1a326a85e4693e33039a848c04, type: 3}
   useSteamAudio: 1
-  enableHRTF: 1
-  enableOcclusion: 1
-  enableReverb: 1
-  occlusionMode: 1
-  transmissionRays: 16
+  directBinaural: 1
+  hrtfInterpolation: 0
+  distanceAttenuation: 1
+  distanceAttenuationInput: 0
+  airAbsorption: 1
+  airAbsorptionInput: 0
+  directivity: 1
+  directivityInput: 0
+  dipoleWeight: 0
+  dipolePower: 0
+  occlusion: 1
+  occlusionInput: 0
+  occlusionType: 0
+  transmission: 0
   directMixLevel: 1
+  reflections: 1
+  reflectionsType: 0
+  useDistanceCurveForReflections: 0
+  applyHRTFToReflections: 0
+  reflectionsMixLevel: 1
+  pathing: 0
+  pathingProbeBatch: {fileID: 0}
+  pathValidation: 1
+  findAlternatePaths: 1
+  applyHRTFToPathing: 0
+  pathingMixLevel: 1

@@ -4,17 +4,10 @@ using UnityEngine;
 
 namespace AutomaticDoorSystem
 {
+    [DefaultExecutionOrder(-100)]
     public class DoorAudioBridge : MonoBehaviour
     {
         public static DoorAudioBridge Instance { get; private set; }
-
-        [Header("Fallback Audio Clips (Optional)")]
-        [Tooltip("Fallback audio clips used only when a door has no configuration assigned.\n" +
-            "Prefer using DoorAudioConfiguration ScriptableObjects on door identifiers.")]
-        public AudioClip fallbackOpenClip;
-        public AudioClip fallbackCloseClip;
-        public AudioClip fallbackLockClip;
-        public AudioClip fallbackUnlockClip;
 
         private EntityManager _entityManager;
         private EntityQuery _audioEventQuery;
@@ -121,33 +114,11 @@ namespace AutomaticDoorSystem
             {
                 if (config != null)
                 {
-                    AudioClip configClip = config.GetClipForEventType(audioEvent.EventType);
-                    if (configClip != null)
-                    {
-                        return configClip;
-                    }
+                    return config.GetClipForEventType(audioEvent.EventType);
                 }
             }
 
-            AudioClip fallbackClip = GetFallbackClipForEventType(audioEvent.EventType);
-            if (fallbackClip != null)
-            {
-                return fallbackClip;
-            }
-
             return null;
-        }
-
-        private AudioClip GetFallbackClipForEventType(AudioEventType eventType)
-        {
-            return eventType switch
-            {
-                AudioEventType.Open => fallbackOpenClip,
-                AudioEventType.Close => fallbackCloseClip,
-                AudioEventType.Lock => fallbackLockClip,
-                AudioEventType.Unlock => fallbackUnlockClip,
-                _ => null
-            };
         }
 
         public void RegisterAudioSource(int doorNumber, AudioSource audioSource, DoorAudioConfiguration config = null)
@@ -169,12 +140,10 @@ namespace AutomaticDoorSystem
             if (_doorToAudioSourceCache.ContainsKey(doorNumber))
             {
                 var existing = _doorToAudioSourceCache[doorNumber];
-                if (existing == audioSource)
+                if (existing != audioSource)
                 {
-                    return;
+                    _doorToAudioSourceCache[doorNumber] = audioSource;
                 }
-
-                _doorToAudioSourceCache[doorNumber] = audioSource;
 
                 if (config != null)
                 {
