@@ -243,14 +243,6 @@ namespace AutomaticDoorSystem
             _doorDistanceCount = 0;
             _distanceComparer = new DoorDistanceComparer();
             _distanceCheckWait = new WaitForSeconds(distanceCheckInterval);
-
-            if (DoorAudioBridge.Instance != null)
-            {
-                for (int i = 0; i < maxPoolSize; i++)
-                {
-                    DoorAudioBridge.Instance.RegisterAudioSource(-(i + 1), _audioSourcePool[i], null);
-                }
-            }
         }
 
         private void Start()
@@ -372,7 +364,6 @@ namespace AutomaticDoorSystem
                 Array.Sort(_doorDistances, 0, _doorDistanceCount, _distanceComparer);
             }
 
-            int beforeDedup = _doorDistanceCount;
             _doorDistanceCount = RemoveDuplicatePositions(_doorDistances, _doorDistanceCount);
 
             int doorsToActivate = Mathf.Min(_doorDistanceCount, maxPoolSize);
@@ -389,29 +380,6 @@ namespace AutomaticDoorSystem
             else
             {
                 DeactivateUnusedSlotsOnly();
-            }
-
-            int inRangeSlots = 0;
-            int stickySlots = 0;
-            var inRangeDoorSet = new System.Collections.Generic.HashSet<int>();
-            for (int i = 0; i < doorsToActivate; i++)
-            {
-                inRangeDoorSet.Add(_doorDistances[i].doorNumber);
-            }
-
-            for (int i = 0; i < maxPoolSize; i++)
-            {
-                if (_poolStates[i].assignedDoorNumber != -1)
-                {
-                    if (inRangeDoorSet.Contains(_poolStates[i].assignedDoorNumber))
-                    {
-                        inRangeSlots++;
-                    }
-                    else
-                    {
-                        stickySlots++;
-                    }
-                }
             }
         }
 
@@ -486,7 +454,7 @@ namespace AutomaticDoorSystem
                 state.audioSource.volume = state.targetVolume;
             }
 
-            if (DoorAudioBridge.Instance != null)
+            if (DoorAudioBridge.Instance != null && config != null)
             {
                 DoorAudioBridge.Instance.RegisterAudioSource(doorInfo.doorNumber, state.audioSource, config);
             }
@@ -527,14 +495,6 @@ namespace AutomaticDoorSystem
                 {
                     DeactivateAudioSource(i);
                 }
-            }
-        }
-
-        private void DeactivateAllAudioSources()
-        {
-            for (int i = 0; i < maxPoolSize; i++)
-            {
-                DeactivateAudioSource(i);
             }
         }
 

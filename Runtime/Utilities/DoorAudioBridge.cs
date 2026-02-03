@@ -121,66 +121,26 @@ namespace AutomaticDoorSystem
             return null;
         }
 
-        public void RegisterAudioSource(int doorNumber, AudioSource audioSource, DoorAudioConfiguration config = null)
+        public void RegisterAudioSource(int doorNumber, AudioSource audioSource, DoorAudioConfiguration config)
         {
-            if (_doorToAudioSourceCache == null || audioSource == null)
-            {
-                return;
-            }
+            if (_doorToAudioSourceCache == null || audioSource == null) return;
 
-            if (config == null)
-            {
-                var identifier = audioSource.GetComponent<DoorIdentifier>();
-                if (identifier != null)
-                {
-                    config = identifier.GetAudioConfiguration();
-                }
-            }
+            _doorToAudioSourceCache[doorNumber] = audioSource;
 
-            if (_doorToAudioSourceCache.ContainsKey(doorNumber))
+            if (config != null)
             {
-                var existing = _doorToAudioSourceCache[doorNumber];
-                if (existing != audioSource)
-                {
-                    _doorToAudioSourceCache[doorNumber] = audioSource;
-                }
-
-                if (config != null)
-                {
-                    _doorToConfigCache[doorNumber] = config;
-                }
-                else if (_doorToConfigCache.ContainsKey(doorNumber))
-                {
-                    _doorToConfigCache.Remove(doorNumber);
-                }
-            }
-            else
-            {
-                _doorToAudioSourceCache.Add(doorNumber, audioSource);
-
-                if (config != null)
-                {
-                    _doorToConfigCache.Add(doorNumber, config);
-                }
+                _doorToConfigCache[doorNumber] = config;
             }
         }
 
         public void UnregisterAudioSource(int doorNumber, AudioSource audioSource)
         {
-            if (_doorToAudioSourceCache == null)
-            {
-                return;
-            }
+            if (_doorToAudioSourceCache == null) return;
 
-            if (!_doorToAudioSourceCache.TryGetValue(doorNumber, out var registeredSource)) return;
-            if (registeredSource == audioSource)
+            if (_doorToAudioSourceCache.TryGetValue(doorNumber, out var registeredSource) && registeredSource == audioSource)
             {
                 _doorToAudioSourceCache.Remove(doorNumber);
-
-                if (_doorToConfigCache != null && _doorToConfigCache.ContainsKey(doorNumber))
-                {
-                    _doorToConfigCache.Remove(doorNumber);
-                }
+                _doorToConfigCache.Remove(doorNumber);
             }
         }
     }
