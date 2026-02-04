@@ -60,7 +60,6 @@ namespace AutomaticDoorSystem.Utilities
             if (DoorDataBridge.Instance == null)
             {
                 gameObject.AddComponent<DoorDataBridge>();
-                Debug.Log("[BoxColliderPoolManager] Auto-created DoorDataBridge component");
             }
 
             InitializePool();
@@ -93,7 +92,6 @@ namespace AutomaticDoorSystem.Utilities
             }
             else
             {
-                Debug.LogWarning("[BoxColliderPoolManager] DoorDataBridge not ready yet, retrying...");
                 Invoke(nameof(ForceInitialUpdate), 0.5f);
             }
         }
@@ -125,7 +123,7 @@ namespace AutomaticDoorSystem.Utilities
 
         private void InitializePool()
         {
-            _poolContainer = new GameObject("BoxCollider Pool").transform;
+            _poolContainer = new GameObject("BoxCollider_Pool").transform;
             _poolContainer.SetParent(transform);
             _poolContainer.localPosition = Vector3.zero;
 
@@ -281,7 +279,6 @@ namespace AutomaticDoorSystem.Utilities
             BoxCollider collider = _colliderPool[poolIndex];
             Rigidbody rb = _rigidbodyPool[poolIndex];
 
-            // Use collider data from the subscene prefab BoxColliders
             if (panelInfo.hasColliderData)
             {
                 collider.size = panelInfo.colliderSize;
@@ -318,20 +315,6 @@ namespace AutomaticDoorSystem.Utilities
 
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(_cameraTransform.position, cullingDistance);
-
-            if (_colliderPool != null)
-            {
-                Gizmos.color = Color.cyan;
-                for (int i = 0; i < maxPoolSize; i++)
-                {
-                    if (_colliderPool[i] != null && _colliderPool[i].enabled)
-                    {
-                        Gizmos.matrix = _colliderPool[i].transform.localToWorldMatrix;
-                        Gizmos.DrawWireCube(Vector3.zero, _colliderPool[i].size);
-                    }
-                }
-                Gizmos.matrix = Matrix4x4.identity;
-            }
         }
 
         public int GetActiveColliderCount()
