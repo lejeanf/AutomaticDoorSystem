@@ -7,11 +7,9 @@ namespace AutomaticDoorSystem.Editor
 {
     #if UNITY_EDITOR
     [CustomEditor(typeof(DoorAuthoring))]
-    #endif
     public class DoorAuthoringEditor : UnityEditor.Editor
     {
         
-#if UNITY_EDITOR
         private SerializedProperty doorConfigProp;
         private SerializedProperty doorMeshProp;
         private SerializedProperty leftDoorMeshProp;
@@ -193,5 +191,5 @@ namespace AutomaticDoorSystem.Editor
             }
         }
     }
-#endif
+    #endif
 }
