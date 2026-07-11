@@ -11,12 +11,24 @@ namespace AutomaticDoorSystem
     {
         private NativeList<StateTransitionLog> _stateTransitions;
 
+        // Burst-compiled code must not build FixedStrings from managed strings
+        // (Burst error BC1016), so the debug reason is an enum — call ToString()
+        // on it outside Burst if it ever needs printing.
+        public enum DoorTransitionReason : byte
+        {
+            StateMachineTransition = 0,
+            DoorLocked,
+            AnimationCompleted,
+            AutoCloseTimerExpired,
+            EntitiesLeftTrigger,
+        }
+
         private struct StateTransitionLog
         {
             public int DoorId;
             public DoorState OldState;
             public DoorState NewState;
-            public FixedString128Bytes Reason;
+            public DoorTransitionReason Reason;
         }
 
         [BurstCompile]
@@ -59,7 +71,7 @@ namespace AutomaticDoorSystem
                                 DoorId = door.ValueRO.DoorId,
                                 OldState = oldState,
                                 NewState = DoorState.Closed,
-                                Reason = new FixedString128Bytes("Door is locked")
+                                Reason = DoorTransitionReason.DoorLocked
                             });
                         }
                     }
@@ -105,19 +117,19 @@ namespace AutomaticDoorSystem
 
 
         [BurstCompile]
-        private FixedString128Bytes GetTransitionReason(DoorState oldState, DoorState newState, in DoorStateComponent state, in DoorComponent door)
+        private DoorTransitionReason GetTransitionReason(DoorState oldState, DoorState newState, in DoorStateComponent state, in DoorComponent door)
         {
             if (oldState == DoorState.Opening && newState == DoorState.Open)
-                return new FixedString128Bytes("Animation completed");
+                return DoorTransitionReason.AnimationCompleted;
             if (oldState == DoorState.Closing && newState == DoorState.Closed)
-                return new FixedString128Bytes("Animation completed");
+                return DoorTransitionReason.AnimationCompleted;
             if (oldState == DoorState.Open && newState == DoorState.Closing)
             {
                 if (state.EntitiesInTrigger == 0)
-                    return new FixedString128Bytes("Auto-close timer expired");
-                return new FixedString128Bytes("Entities left trigger");
+                    return DoorTransitionReason.AutoCloseTimerExpired;
+                return DoorTransitionReason.EntitiesLeftTrigger;
             }
-            return new FixedString128Bytes("State machine transition");
+            return DoorTransitionReason.StateMachineTransition;
         }
 
         [BurstCompile]
