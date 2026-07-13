@@ -1,5 +1,6 @@
 using jeanf.EventSystem;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace AutomaticDoorSystem
 {
@@ -44,26 +45,32 @@ namespace AutomaticDoorSystem
             if (!enableKeyboardShortcuts)
                 return;
 
+            // New Input System — legacy Input.GetKeyDown throws once the old
+            // Input Manager is disabled in Active Input Handling.
+            var keyboard = Keyboard.current;
+            if (keyboard == null)
+                return;
+
             // L = Lock target door
-            if (Input.GetKeyDown(KeyCode.L))
+            if (keyboard.lKey.wasPressedThisFrame)
             {
                 LockDoor(targetDoorId);
             }
 
             // U = Unlock target door
-            if (Input.GetKeyDown(KeyCode.U))
+            if (keyboard.uKey.wasPressedThisFrame)
             {
                 UnlockDoor(targetDoorId);
             }
 
             // K = Lock all doors (example: IDs 1-10)
-            if (Input.GetKeyDown(KeyCode.K))
+            if (keyboard.kKey.wasPressedThisFrame)
             {
                 LockAllDoors();
             }
 
             // I = Unlock all doors (example: IDs 1-10)
-            if (Input.GetKeyDown(KeyCode.I))
+            if (keyboard.iKey.wasPressedThisFrame)
             {
                 UnlockAllDoors();
             }
