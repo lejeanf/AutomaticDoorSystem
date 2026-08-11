@@ -19,8 +19,6 @@ namespace AutomaticDoorSystem.Editor
         private SerializedProperty enableDebugProp;
 
         private SerializedObject doorConfigSerializedObject;
-        private SerializedObject audioConfigSerializedObject;
-        private bool audioSettingsFoldout = false;
 
         private void OnEnable()
         {
@@ -162,21 +160,11 @@ namespace AutomaticDoorSystem.Editor
             var autoCloseDelayProp = doorConfigSerializedObject.FindProperty("autoCloseDelay");
             var canOpenLayerMaskProp = doorConfigSerializedObject.FindProperty("canOpenLayerMask");
             var startLockedProp = doorConfigSerializedObject.FindProperty("startLocked");
-            var regionReferenceProp = doorConfigSerializedObject.FindProperty("regionReference");
-            var shouldAlwaysCheckProp = doorConfigSerializedObject.FindProperty("shouldAlwaysCheck");
 
             EditorGUILayout.PropertyField(animationDurationProp);
             EditorGUILayout.PropertyField(autoCloseDelayProp);
             EditorGUILayout.PropertyField(canOpenLayerMaskProp);
             EditorGUILayout.PropertyField(startLockedProp);
-            GUI.enabled = true;
-
-            EditorGUILayout.Space();
-
-            var audioConfigProp = doorConfigSerializedObject.FindProperty("audioConfiguration");
-            EditorGUILayout.LabelField("Audio Configuration (from DoorConfig)", EditorStyles.boldLabel);
-            GUI.enabled = false;
-            EditorGUILayout.PropertyField(audioConfigProp, new GUIContent("Audio Config"));
             GUI.enabled = true;
 
             EditorGUILayout.Space();

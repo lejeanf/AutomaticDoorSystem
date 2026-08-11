@@ -448,40 +448,6 @@ The pooling system uses **Camera.main** for distance calculations.
 
 ---
 
-## Screenshots to Take
-
-Save screenshots with these exact names in an `images/` folder next to this README:
-
-| Filename | What to Capture |
-|----------|-----------------|
-| `01_create_doorconfig.png` | Right-click menu showing Create > AutomaticDoorSystem > DoorConfig |
-| `02_doorconfig_inspector.png` | DoorConfig asset selected, showing all Inspector settings |
-| `03_door_hierarchy.png` | Door prefab hierarchy (Root > DoorMeshes > TriggerVolume) |
-| `04_doorauthoring_inspector.png` | DoorAuthoring component with all fields configured |
-| `05_door_collider_setup.png` | BoxCollider on door mesh in Inspector with Edit Collider active |
-| `06_collider_gizmo_scene.png` | Scene view showing green BoxCollider wireframes on doors |
-| `07_triggervolume_inspector.png` | DoorTriggerVolumeAuthoring component settings |
-| `08_triggervolume_gizmo.png` | Scene view showing green trigger volume wireframe |
-| `09_create_subscene.png` | GameObject menu showing New Sub Scene option |
-| `10_door_in_subscene.png` | Door prefab inside open subscene in Hierarchy |
-| `11_unique_door_ids.png` | Multiple doors selected showing different Door IDs |
-| `12_doormanagement_create.png` | DoorManagement empty GameObject in Main Scene |
-| `13_boxcolliderpoolmanager.png` | BoxColliderPoolManager component with all settings |
-| `14_audiosourcepoolmanager.png` | AudioSourcePoolManager component with all settings |
-| `15_doordatabridge.png` | DoorDataBridge component (simple, no settings) |
-| `16_dooraudiobridge.png` | DoorAudioBridge component (simple, no settings) |
-| `17_doormanagement_complete.png` | DoorManagement with all 4 components visible |
-| `18_dooridentifier_create.png` | DoorIdentifier empty GameObject in Main Scene |
-| `19_dooridentifier_inspector.png` | DoorIdentifier component showing Door Number field |
-| `20_dooridentifiers_organized.png` | Multiple DoorIdentifiers organized under parent |
-| `21_player_triggerable.png` | Player with DoorTriggerableAuthoring component |
-| `22_player_layer_check.png` | Player Inspector showing layer, DoorConfig showing mask |
-| `23_create_audioconfig.png` | Right-click menu showing Create audio config option |
-| `24_audioconfig_inspector.png` | DoorAudioConfiguration with clips assigned |
-| `25_assign_audioconfig.png` | DoorIdentifier with audio config assigned |
-
----
-
 ## Quick Reference Checklist
 
 ### Per Door Prefab:
