@@ -289,6 +289,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6647133106173458694}
+  - component: {fileID: 7806858827287585916}
   m_Layer: 0
   m_Name: LeftDoorMesh
   m_TagString: Untagged
@@ -312,6 +313,22 @@ Transform:
   - {fileID: 3229438261612506313}
   m_Father: {fileID: 9005514267946384892}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!208 &7806858827287585916
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7695452978308506894}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 0.5, y: 0.5, z: 0.5}
+  m_MoveThreshold: 0.1
+  m_Carve: 0
+  m_CarveOnlyStationary: 1
+  m_Center: {x: 0, y: 0, z: 0}
+  m_TimeToStationary: 0.5
 --- !u!1 &9014881076669164721
 GameObject:
   m_ObjectHideFlags: 0
@@ -321,6 +338,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 159801261560489491}
+  - component: {fileID: 4823310964881955055}
   m_Layer: 0
   m_Name: RightDoorMesh
   m_TagString: Untagged
@@ -344,3 +362,19 @@ Transform:
   - {fileID: 6906388651117810269}
   m_Father: {fileID: 9005514267946384892}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!208 &4823310964881955055
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9014881076669164721}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 0.5, y: 0.5, z: 0.5}
+  m_MoveThreshold: 0.1
+  m_Carve: 0
+  m_CarveOnlyStationary: 1
+  m_Center: {x: 0, y: 0, z: 0}
+  m_TimeToStationary: 0.5

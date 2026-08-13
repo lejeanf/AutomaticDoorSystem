@@ -244,6 +244,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6817208486179068767}
   - component: {fileID: 8347149067061490584}
+  - component: {fileID: 5849676024662628663}
   m_Layer: 0
   m_Name: RightDoorMesh
   m_TagString: Untagged
@@ -288,6 +289,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 3, z: 0.1}
   m_Center: {x: 0.5, y: 1.5, z: 0}
+--- !u!208 &5849676024662628663
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6728016793667680495}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 0.5, y: 0.5, z: 0.5}
+  m_MoveThreshold: 0.1
+  m_Carve: 0
+  m_CarveOnlyStationary: 1
+  m_Center: {x: 0, y: 0, z: 0}
+  m_TimeToStationary: 0.5
 --- !u!1 &7398268255483952708
 GameObject:
   m_ObjectHideFlags: 0
@@ -298,6 +315,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3049767205746618045}
   - component: {fileID: 3078178373463441846}
+  - component: {fileID: 2038038893573754231}
   m_Layer: 0
   m_Name: LeftDoorMesh
   m_TagString: Untagged
@@ -342,6 +360,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 3, z: 0.1}
   m_Center: {x: -0.5, y: 1.5, z: 0}
+--- !u!208 &2038038893573754231
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7398268255483952708}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 0.5, y: 0.5, z: 0.5}
+  m_MoveThreshold: 0.1
+  m_Carve: 0
+  m_CarveOnlyStationary: 1
+  m_Center: {x: 0, y: 0, z: 0}
+  m_TimeToStationary: 0.5
 --- !u!1 &7682585099614776013
 GameObject:
   m_ObjectHideFlags: 0
