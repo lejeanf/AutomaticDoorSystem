@@ -1,8 +1,10 @@
+using jeanf.propertyDrawer;
 using jeanf.scenemanagement;
 using UnityEngine;
 
 namespace AutomaticDoorSystem
 {
+    [ScriptableObjectDrawer]
     [CreateAssetMenu(fileName = "DoorConfig", menuName = "AutomaticDoorSystem/DoorConfig", order = 1)]
     public class DoorConfig : ScriptableObject
     {

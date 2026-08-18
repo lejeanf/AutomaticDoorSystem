@@ -1,6 +1,6 @@
 {
   "name": "fr.jeanf.automaticdoorsystem",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "displayName": "Automatic Door System",
   "description": "A high-performance automatic door system using Unity ECS (Entities) with pooled audio and colliders.\nSupports rotating and sliding doors, single and double configurations.\nFeatures   distance-based culling, object pooling for AudioSources and BoxColliders, and seamless subscene integration for optimal performance with hundreds of doors.",
   "unity": "6000.0",
