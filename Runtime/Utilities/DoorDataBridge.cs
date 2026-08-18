@@ -26,7 +26,8 @@ namespace AutomaticDoorSystem.Utilities
             public Vector3 slideOffset;
             public Vector3 triggerSize;
             public Vector3 triggerCenter;
-            /// <summary>World centre of the trigger volume - where the pooled AudioSource is placed.</summary>
+            /// <summary>Where the pooled AudioSource is placed: the baked audioAnchor override,
+            /// or the world centre of the trigger volume when no anchor was assigned.</summary>
             public Vector3 audioPosition;
             public bool isLocked;
             public Entity rootEntity;
@@ -224,6 +225,8 @@ namespace AutomaticDoorSystem.Utilities
 
                 _doorEntityCache[doorId] = entities[i];
 
+                GetAudioData(entities[i], triggers[i].Center, out var audioConfig, out var audioAnchorLocal);
+
                 var doorInfo = new DoorInfo
                 {
                     doorId = doorId,
@@ -234,10 +237,10 @@ namespace AutomaticDoorSystem.Utilities
                     slideOffset = doorTransforms[i].SlideOffset,
                     triggerSize = triggers[i].Size,
                     triggerCenter = triggers[i].Center,
-                    audioPosition = math.transform(transforms[i].Value, triggers[i].Center),
+                    audioPosition = math.transform(transforms[i].Value, audioAnchorLocal),
                     isLocked = doorStates[i].IsLocked == 1,
                     rootEntity = entities[i],
-                    audioConfig = GetAudioConfig(entities[i])
+                    audioConfig = audioConfig
                 };
 
                 _cachedDoorInfo.Add(doorInfo);
@@ -287,6 +290,8 @@ namespace AutomaticDoorSystem.Utilities
             var transform = _entityManager.GetComponentData<LocalToWorld>(doorEntity);
             var trigger = _entityManager.GetComponentData<DoorTriggerVolume>(doorEntity);
 
+            GetAudioData(doorEntity, trigger.Center, out var audioConfig, out var audioAnchorLocal);
+
             info = new DoorInfo
             {
                 doorId = doorComponent.DoorId,
@@ -297,25 +302,31 @@ namespace AutomaticDoorSystem.Utilities
                 slideOffset = doorTransform.SlideOffset,
                 triggerSize = trigger.Size,
                 triggerCenter = trigger.Center,
-                audioPosition = math.transform(transform.Value, trigger.Center),
+                audioPosition = math.transform(transform.Value, audioAnchorLocal),
                 isLocked = doorState.IsLocked == 1,
                 rootEntity = doorEntity,
-                audioConfig = GetAudioConfig(doorEntity)
+                audioConfig = audioConfig
             };
 
             return true;
         }
 
         /// <summary>
-        /// Resolves the DoorAudioConfiguration baked onto the door entity. Doors baked before the
-        /// config moved onto DoorAuthoring have no such component, hence the HasComponent guard.
+        /// Resolves the DoorAudioConfiguration and audio anchor baked onto the door entity.
+        /// Doors baked before the config moved onto DoorAuthoring have no such component, hence
+        /// the HasComponent guard; those fall back to the trigger volume centre for the anchor.
         /// </summary>
-        private DoorAudioConfiguration GetAudioConfig(Entity doorEntity)
+        private void GetAudioData(Entity doorEntity, float3 triggerCenter, out DoorAudioConfiguration config, out float3 anchorLocalPosition)
         {
-            if (!_entityManager.HasComponent<DoorAudioConfigReference>(doorEntity))
-                return null;
+            config = null;
+            anchorLocalPosition = triggerCenter;
 
-            return _entityManager.GetComponentData<DoorAudioConfigReference>(doorEntity).Config.Value;
+            if (!_entityManager.HasComponent<DoorAudioConfigReference>(doorEntity))
+                return;
+
+            var reference = _entityManager.GetComponentData<DoorAudioConfigReference>(doorEntity);
+            config = reference.Config.Value;
+            anchorLocalPosition = reference.AnchorLocalPosition;
         }
 
         public bool IsDoorLocked(int doorId)

@@ -30,7 +30,6 @@ namespace AutomaticDoorSystem
             _doorToRegionMap = new NativeHashMap<int, FixedString128Bytes>(100, Allocator.Persistent);
             _globalDoorIds = new NativeHashSet<int>(50, Allocator.Persistent);
             _detectionAccumulator = 0f;
-            _firstFrameLogged = false;
 
             _doorQuery = SystemAPI.QueryBuilder()
                 .WithAll<DoorComponent, DoorStateComponent, DoorTriggerVolume, LocalToWorld>()
@@ -42,8 +41,6 @@ namespace AutomaticDoorSystem
                 .Build();
 
         }
-
-        private bool _firstFrameLogged;
 
         [BurstCompile]
         public void OnDestroy(ref SystemState state)

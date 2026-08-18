@@ -210,7 +210,7 @@ the door root is selected in the Scene view, along with three markers:
 |--------|--------|---------|
 | **Bottom center** | orange | Lowest point the volume reaches - raise it above the floor and nothing will trigger the door |
 | **Top center** | cyan | Highest point the volume reaches - it has to clear the player's camera height |
-| **Audio anchor** | yellow | Volume centre, where the pooled AudioSource is parked. Put it mid-doorway rather than at the door's hinge |
+| **Audio anchor** | yellow | Volume centre, where the pooled AudioSource is parked. Put it mid-doorway rather than at the door's hinge. To place the sound somewhere else entirely, assign a child Transform to the **Audio Anchor** field on DoorAuthoring - it then overrides the volume centre |
 
 ![Screenshot: 08_triggervolume_gizmo.png](images/08_triggervolume_gizmo.png)
 *Scene view showing the trigger volume gizmo*

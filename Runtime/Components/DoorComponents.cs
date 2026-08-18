@@ -53,6 +53,11 @@ namespace AutomaticDoorSystem
     public struct DoorAudioConfigReference : IComponentData
     {
         public UnityObjectRef<DoorAudioConfiguration> Config;
+        /// <summary>
+        /// Where the pooled AudioSource is placed, relative to the door root. Baked from
+        /// <see cref="DoorAuthoring.audioAnchor"/> when assigned, otherwise the trigger volume centre.
+        /// </summary>
+        public float3 AnchorLocalPosition;
     }
 
     public struct DoorTriggerableTag : IComponentData { }

@@ -11,7 +11,6 @@ namespace AutomaticDoorSystem
         [Tooltip("REQUIRED: Unique identifier for this specific door instance (used for lock/unlock events)")]
         public int doorId = 0;
 
-        [Header("Door Mesh References")]
         [Tooltip("The actual door mesh GameObject to animate (for single doors)")]
         public Transform doorMesh;
 
@@ -19,7 +18,6 @@ namespace AutomaticDoorSystem
         public Transform leftDoorMesh;
         public Transform rightDoorMesh;
 
-        [Header("Trigger Volume")]
         [Tooltip("Child GameObject containing the trigger volume (should have DoorTriggerVolumeAuthoring component)")]
         public Transform triggerVolumeObject;
 
@@ -35,6 +33,11 @@ namespace AutomaticDoorSystem
                  "Baked into the entity, so the pooled AudioSources pick it up without a companion object in the main scene. " +
                  "Leave empty for a silent door.")]
         public DoorAudioConfiguration doorAudioConfig;
+
+        [Tooltip("Optional anchor for this door's sound. When assigned, the pooled AudioSource is placed " +
+                 "at this transform instead of the trigger volume centre. Its position is baked, so move it " +
+                 "in edit mode, not at runtime.")]
+        public Transform audioAnchor;
 
         /// <summary>
         /// Panel wiring must match the assigned config: a Double config needs BOTH panels, a Single
@@ -56,12 +59,14 @@ namespace AutomaticDoorSystem
         }
 
         /// <summary>
-        /// World position the pooled AudioSource is placed at: the centre of the trigger volume,
-        /// which sits in the doorway rather than at the door's pivot (usually a hinge edge).
-        /// Falls back to the door root when no trigger volume is assigned.
+        /// World position the pooled AudioSource is placed at: the audioAnchor override when one is
+        /// assigned, otherwise the centre of the trigger volume, which sits in the doorway rather
+        /// than at the door's pivot (usually a hinge edge).
+        /// Falls back to the door root when neither is assigned.
         /// </summary>
         public Vector3 GetAudioAnchorPosition()
         {
+            if (audioAnchor != null) return audioAnchor.position;
             if (triggerVolumeObject == null) return transform.position;
 
             var volumeAuthoring = triggerVolumeObject.GetComponent<DoorTriggerVolumeAuthoring>();
@@ -103,11 +108,24 @@ namespace AutomaticDoorSystem
             }
 
             DrawTriggerVolumeGizmos();
+            DrawAudioAnchorGizmo();
 
             if (enableDebug)
             {
                 DrawDebugInfo();
             }
+        }
+
+        private void DrawAudioAnchorGizmo()
+        {
+            if (audioAnchor == null) return;
+
+            Gizmos.matrix = Matrix4x4.identity;
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(audioAnchor.position, 0.15f);
+#if UNITY_EDITOR
+            UnityEditor.Handles.Label(audioAnchor.position + Vector3.up * 0.25f, "Audio Anchor");
+#endif
         }
 
         private void DrawTriggerVolumeGizmos()
@@ -542,9 +560,21 @@ namespace AutomaticDoorSystem
                     DependsOn(authoring.doorAudioConfig);
                 }
 
+                float3 audioAnchorLocal;
+                if (authoring.audioAnchor != null)
+                {
+                    DependsOn(authoring.audioAnchor);
+                    audioAnchorLocal = authoring.transform.InverseTransformPoint(authoring.audioAnchor.position);
+                }
+                else
+                {
+                    audioAnchorLocal = localCenterRelativeToRoot;
+                }
+
                 AddComponent(entity, new DoorAudioConfigReference
                 {
-                    Config = authoring.doorAudioConfig
+                    Config = authoring.doorAudioConfig,
+                    AnchorLocalPosition = audioAnchorLocal
                 });
 
                 var transformData = CalculateTransformData(authoring, config);

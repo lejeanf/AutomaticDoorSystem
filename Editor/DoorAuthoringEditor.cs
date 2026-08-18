@@ -13,6 +13,7 @@ namespace AutomaticDoorSystem.Editor
         
         private SerializedProperty doorConfigProp;
         private SerializedProperty doorAudioConfigProp;
+        private SerializedProperty audioAnchorProp;
         private SerializedProperty doorMeshProp;
         private SerializedProperty leftDoorMeshProp;
         private SerializedProperty rightDoorMeshProp;
@@ -26,6 +27,7 @@ namespace AutomaticDoorSystem.Editor
         {
             doorConfigProp = serializedObject.FindProperty("doorConfig");
             doorAudioConfigProp = serializedObject.FindProperty("doorAudioConfig");
+            audioAnchorProp = serializedObject.FindProperty("audioAnchor");
             doorMeshProp = serializedObject.FindProperty("doorMesh");
             leftDoorMeshProp = serializedObject.FindProperty("leftDoorMesh");
             rightDoorMeshProp = serializedObject.FindProperty("rightDoorMesh");
@@ -71,10 +73,16 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.Space();
 
+            // Draws its [Header("Debug Settings")] decorator with it, so no LabelField needed.
+            EditorGUILayout.PropertyField(enableDebugProp);
+
+            EditorGUILayout.Space();
+
             // Both config assets first: behavior, then audio
             EditorGUILayout.LabelField("Config", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(doorConfigProp, new GUIContent("Behavior Config"));
             EditorGUILayout.PropertyField(doorAudioConfigProp, new GUIContent("Audio Config"));
+            EditorGUILayout.PropertyField(audioAnchorProp, new GUIContent("Audio Anchor (Optional)"));
 
             // ValidationDrawer already washes the Behavior Config field orange and states why
             // when it is unset — nothing to add here, just stop before the null config below.
@@ -91,11 +99,11 @@ namespace AutomaticDoorSystem.Editor
                     "to give it open/close sounds.",
                     MessageType.Info);
             }
-            else if (((DoorAuthoring)target).triggerVolumeObject == null)
+            else if (((DoorAuthoring)target).audioAnchor == null && ((DoorAuthoring)target).triggerVolumeObject == null)
             {
                 EditorGUILayout.HelpBox(
-                    "No Trigger Volume Object assigned - the pooled AudioSource will fall back to the " +
-                    "door root (usually a hinge edge) instead of the middle of the doorway.",
+                    "No Audio Anchor or Trigger Volume Object assigned - the pooled AudioSource will fall " +
+                    "back to the door root (usually a hinge edge) instead of the middle of the doorway.",
                     MessageType.Warning);
             }
 
@@ -106,8 +114,6 @@ namespace AutomaticDoorSystem.Editor
 
             var doorCount = (DoorConfig.DoorCountEnum)doorCountProp.enumValueIndex;
             bool isDouble = doorCount == DoorConfig.DoorCountEnum.Double;
-
-            EditorGUILayout.LabelField("Door Structure", EditorStyles.boldLabel);
 
             if (isDouble)
             {
@@ -123,8 +129,7 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.Space();
 
-            EditorGUILayout.LabelField("Door Type (from DoorConfig)", EditorStyles.boldLabel);
-            GUI.enabled = false; 
+            GUI.enabled = false;
             EditorGUILayout.PropertyField(doorCountProp, new GUIContent("Door Count"));
             EditorGUILayout.PropertyField(doorMovementProp, new GUIContent("Movement Type"));
             GUI.enabled = true;
@@ -136,7 +141,6 @@ namespace AutomaticDoorSystem.Editor
 
             if (isRotating)
             {
-                EditorGUILayout.LabelField("Rotating Door Settings (from DoorConfig)", EditorStyles.boldLabel);
                 GUI.enabled = false;
                 var openForwardAngleProp = doorConfigSerializedObject.FindProperty("openForwardAngle");
                 var openBackwardAngleProp = doorConfigSerializedObject.FindProperty("openBackwardAngle");
@@ -161,7 +165,6 @@ namespace AutomaticDoorSystem.Editor
             }
             else
             {
-                EditorGUILayout.LabelField("Sliding Door Settings (from DoorConfig)", EditorStyles.boldLabel);
                 GUI.enabled = false;
                 var slideOpenOffsetProp = doorConfigSerializedObject.FindProperty("slideOpenOffset");
                 EditorGUILayout.PropertyField(slideOpenOffsetProp, new GUIContent("Slide Open Offset"));
@@ -170,13 +173,10 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.Space();
 
-            EditorGUILayout.LabelField("Per-Instance Settings", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(doorIdProp);
-            EditorGUILayout.PropertyField(enableDebugProp);
 
             EditorGUILayout.Space();
 
-            EditorGUILayout.LabelField("Animation & Behavior (from DoorConfig)", EditorStyles.boldLabel);
             GUI.enabled = false;
             var animationDurationProp = doorConfigSerializedObject.FindProperty("animationDuration");
             var autoCloseDelayProp = doorConfigSerializedObject.FindProperty("autoCloseDelay");
