@@ -7,7 +7,6 @@ namespace AutomaticDoorSystem
 {
     public class DoorAuthoring : MonoBehaviour, IValidatable
     {
-        [Header("Per-Instance Settings")]
         [Tooltip("REQUIRED: Unique identifier for this specific door instance (used for lock/unlock events)")]
         public int doorId = 0;
 

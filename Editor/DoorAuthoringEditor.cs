@@ -10,7 +10,7 @@ namespace AutomaticDoorSystem.Editor
     [CustomEditor(typeof(DoorAuthoring))]
     public class DoorAuthoringEditor : UnityEditor.Editor
     {
-        
+
         private SerializedProperty doorConfigProp;
         private SerializedProperty doorAudioConfigProp;
         private SerializedProperty audioAnchorProp;
@@ -20,8 +20,6 @@ namespace AutomaticDoorSystem.Editor
         private SerializedProperty triggerVolumeObjectProp;
         private SerializedProperty doorIdProp;
         private SerializedProperty enableDebugProp;
-
-        private SerializedObject doorConfigSerializedObject;
 
         private void OnEnable()
         {
@@ -36,27 +34,9 @@ namespace AutomaticDoorSystem.Editor
             enableDebugProp = serializedObject.FindProperty("enableDebug");
         }
 
-        private void UpdateDoorConfigSerializedObject()
-        {
-            if (doorConfigProp.objectReferenceValue != null)
-            {
-                if (doorConfigSerializedObject == null ||
-                    doorConfigSerializedObject.targetObject != doorConfigProp.objectReferenceValue)
-                {
-                    doorConfigSerializedObject = new SerializedObject(doorConfigProp.objectReferenceValue);
-                }
-                doorConfigSerializedObject.Update();
-            }
-            else
-            {
-                doorConfigSerializedObject = null;
-            }
-        }
-
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
-            UpdateDoorConfigSerializedObject();
 
             // This CustomEditor replaces ValidationInspectorBanner, so draw the banner ourselves:
             // missing [Validation] fields and the IValidatable panel-wiring rule land here.
@@ -66,15 +46,14 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("m_Script"));
             GUI.enabled = true;
 
-            EditorGUILayout.HelpBox(
-                "Door configuration is set via the DoorConfig ScriptableObject. " +
-                "Gizmos in Scene View show door opening visualization.",
-                MessageType.Info);
-
             EditorGUILayout.Space();
 
             // Draws its [Header("Debug Settings")] decorator with it, so no LabelField needed.
             EditorGUILayout.PropertyField(enableDebugProp);
+
+            EditorGUILayout.Space();
+
+            EditorGUILayout.PropertyField(doorIdProp);
 
             EditorGUILayout.Space();
 
@@ -85,9 +64,17 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.PropertyField(audioAnchorProp, new GUIContent("Audio Anchor (Optional)"));
 
             // ValidationDrawer already washes the Behavior Config field orange and states why
-            // when it is unset — nothing to add here, just stop before the null config below.
-            if (doorConfigProp.objectReferenceValue == null)
+            // when it is unset — the help boxes below only add the how-to.
+            var doorConfig = doorConfigProp.objectReferenceValue as DoorConfig;
+            if (doorConfig == null)
             {
+                EditorGUILayout.HelpBox(
+                    "Door configuration is set via the DoorConfig ScriptableObject. " +
+                    "Gizmos in Scene View show door opening visualization.",
+                    MessageType.Info);
+                EditorGUILayout.HelpBox(
+                    "To edit Door Type, Animation, and Behavior settings, select the DoorConfig asset directly.",
+                    MessageType.Info);
                 serializedObject.ApplyModifiedProperties();
                 return;
             }
@@ -109,11 +96,7 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.Space();
 
-            var doorCountProp = doorConfigSerializedObject.FindProperty("doorCount");
-            var doorMovementProp = doorConfigSerializedObject.FindProperty("doorMovement");
-
-            var doorCount = (DoorConfig.DoorCountEnum)doorCountProp.enumValueIndex;
-            bool isDouble = doorCount == DoorConfig.DoorCountEnum.Double;
+            bool isDouble = doorConfig.doorCount == DoorConfig.DoorCountEnum.Double;
 
             if (isDouble)
             {
@@ -129,36 +112,32 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.Space();
 
+            // Read-only mirror of the DoorConfig asset. Typed fields instead of PropertyField so the
+            // asset's [Header] decorators are not drawn again here (they stay on the asset inspector).
             GUI.enabled = false;
-            EditorGUILayout.PropertyField(doorCountProp, new GUIContent("Door Count"));
-            EditorGUILayout.PropertyField(doorMovementProp, new GUIContent("Movement Type"));
+            EditorGUILayout.EnumPopup("Door Count", doorConfig.doorCount);
+            EditorGUILayout.EnumPopup("Movement Type", doorConfig.doorMovement);
             GUI.enabled = true;
 
             EditorGUILayout.Space();
 
-            var doorMovement = (DoorConfig.DoorMovementEnum)doorMovementProp.enumValueIndex;
-            bool isRotating = doorMovement == DoorConfig.DoorMovementEnum.Rotating;
+            bool isRotating = doorConfig.doorMovement == DoorConfig.DoorMovementEnum.Rotating;
 
             if (isRotating)
             {
                 GUI.enabled = false;
-                var openForwardAngleProp = doorConfigSerializedObject.FindProperty("openForwardAngle");
-                var openBackwardAngleProp = doorConfigSerializedObject.FindProperty("openBackwardAngle");
-                EditorGUILayout.PropertyField(openForwardAngleProp, new GUIContent("Open Forward Angle"));
-                EditorGUILayout.PropertyField(openBackwardAngleProp, new GUIContent("Open Backward Angle"));
+                EditorGUILayout.Slider(new GUIContent("Open Forward Angle"), doorConfig.openForwardAngle, 0f, 180f);
+                EditorGUILayout.Slider(new GUIContent("Open Backward Angle"), doorConfig.openBackwardAngle, -180f, 0f);
+                EditorGUILayout.EnumPopup("Opening Style", doorConfig.openingStyle);
 
-                var openingStyleProp = doorConfigSerializedObject.FindProperty("openingStyle");
-                EditorGUILayout.PropertyField(openingStyleProp, new GUIContent("Opening Style"));
-
-                if (!isDouble && (DoorConfig.OpeningStyle)openingStyleProp.enumValueIndex == DoorConfig.OpeningStyle.BothWay)
+                if (!isDouble && doorConfig.openingStyle == DoorConfig.OpeningStyle.BothWay)
                 {
                     EditorGUILayout.HelpBox("BothWay style only applies to double doors. This door will use Forward behavior.", MessageType.Warning);
                 }
 
-                if ((DoorConfig.OpeningStyle)openingStyleProp.enumValueIndex == DoorConfig.OpeningStyle.OneWay)
+                if (doorConfig.openingStyle == DoorConfig.OpeningStyle.OneWay)
                 {
-                    var oneWayDirectionProp = doorConfigSerializedObject.FindProperty("oneWayDirection");
-                    EditorGUILayout.PropertyField(oneWayDirectionProp, new GUIContent("One Way Direction"));
+                    EditorGUILayout.Vector3Field("One Way Direction", doorConfig.oneWayDirection);
                 }
 
                 GUI.enabled = true;
@@ -166,39 +145,22 @@ namespace AutomaticDoorSystem.Editor
             else
             {
                 GUI.enabled = false;
-                var slideOpenOffsetProp = doorConfigSerializedObject.FindProperty("slideOpenOffset");
-                EditorGUILayout.PropertyField(slideOpenOffsetProp, new GUIContent("Slide Open Offset"));
+                EditorGUILayout.Vector3Field("Slide Open Offset", doorConfig.slideOpenOffset);
                 GUI.enabled = true;
             }
 
             EditorGUILayout.Space();
 
-            EditorGUILayout.PropertyField(doorIdProp);
-
-            EditorGUILayout.Space();
-
             GUI.enabled = false;
-            var animationDurationProp = doorConfigSerializedObject.FindProperty("animationDuration");
-            var autoCloseDelayProp = doorConfigSerializedObject.FindProperty("autoCloseDelay");
-            var canOpenLayerMaskProp = doorConfigSerializedObject.FindProperty("canOpenLayerMask");
-            var startLockedProp = doorConfigSerializedObject.FindProperty("startLocked");
-
-            EditorGUILayout.PropertyField(animationDurationProp);
-            EditorGUILayout.PropertyField(autoCloseDelayProp);
-            EditorGUILayout.PropertyField(canOpenLayerMaskProp);
-            EditorGUILayout.PropertyField(startLockedProp);
+            EditorGUILayout.Slider(new GUIContent("Animation Duration"), doorConfig.animationDuration, 0.1f, 5f);
+            EditorGUILayout.Slider(new GUIContent("Auto Close Delay"), doorConfig.autoCloseDelay, 0f, 10f);
+            EditorGUILayout.MaskField("Can Open Layer Mask",
+                UnityEditorInternal.InternalEditorUtility.LayerMaskToConcatenatedLayersMask(doorConfig.canOpenLayerMask),
+                UnityEditorInternal.InternalEditorUtility.layers);
+            EditorGUILayout.Toggle("Start Locked", doorConfig.startLocked);
             GUI.enabled = true;
 
-            EditorGUILayout.Space();
-            EditorGUILayout.HelpBox(
-                "To edit Door Type, Animation, and Behavior settings, select the DoorConfig asset directly.",
-                MessageType.Info);
-
             serializedObject.ApplyModifiedProperties();
-            if (doorConfigSerializedObject != null)
-            {
-                doorConfigSerializedObject.ApplyModifiedProperties();
-            }
         }
     }
     #endif
