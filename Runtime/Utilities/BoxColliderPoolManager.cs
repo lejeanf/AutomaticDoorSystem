@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
@@ -47,6 +48,10 @@ namespace AutomaticDoorSystem.Utilities
         private float _updateAccumulator;
         private WaitForSeconds _updateWait;
         private bool _duplicateIdWarningLogged;
+        private bool _dependencyWarningLogged;
+        // The pool re-configures colliders every update interval - without this, per-door
+        // warnings repeat forever and drown the console.
+        private readonly HashSet<int> _fallbackSizeWarnedDoors = new HashSet<int>();
 
         private void Awake()
         {
@@ -183,9 +188,14 @@ namespace AutomaticDoorSystem.Utilities
         {
             if (_cameraTransform == null || DoorDataBridge.Instance == null)
             {
-                Debug.LogWarning("[BoxColliderPoolManager] Camera or DoorDataBridge not available");
+                if (!_dependencyWarningLogged)
+                {
+                    _dependencyWarningLogged = true;
+                    Debug.LogWarning("[BoxColliderPoolManager] Camera or DoorDataBridge not available");
+                }
                 return;
             }
+            _dependencyWarningLogged = false;
 
             float3 playerPosition = _cameraTransform.position;
 
@@ -301,7 +311,13 @@ namespace AutomaticDoorSystem.Utilities
                 // Fallback - generic door size (add BoxCollider to door panel in subscene prefab)
                 collider.size = new Vector3(1f, 2.5f, 0.1f);
                 collider.center = new Vector3(0.5f, 1.25f, 0f);
-                Debug.LogWarning($"[BoxColliderPoolManager] Door {doorInfo.doorId} panel has no BoxCollider data - using fallback size");
+                if (_fallbackSizeWarnedDoors.Add(doorInfo.doorId))
+                {
+                    Debug.LogWarning(
+                        $"[BoxColliderPoolManager] Door {doorInfo.doorId} panel has no BoxCollider data - using " +
+                        "fallback size. Add a BoxCollider to the door panels in the subscene prefab. " +
+                        "(logged once per door)");
+                }
             }
 
             rb.MoveRotation(panelInfo.rotation);
