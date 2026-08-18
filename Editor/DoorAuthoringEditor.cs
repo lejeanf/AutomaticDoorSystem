@@ -98,14 +98,19 @@ namespace AutomaticDoorSystem.Editor
 
             bool isDouble = doorConfig.doorCount == DoorConfig.DoorCountEnum.Double;
 
+            // Conditionally required (depends on the config's door count), so no [Validation]
+            // attribute — the shared helper gives the missing ones the same orange treatment.
             if (isDouble)
             {
-                EditorGUILayout.PropertyField(leftDoorMeshProp);
-                EditorGUILayout.PropertyField(rightDoorMeshProp);
+                ValidationUi.DrawRequiredField(leftDoorMeshProp,
+                    "A Double config needs BOTH panels — without the left panel nothing animates.");
+                ValidationUi.DrawRequiredField(rightDoorMeshProp,
+                    "A Double config needs BOTH panels — without the right panel nothing animates.");
             }
             else
             {
-                EditorGUILayout.PropertyField(doorMeshProp);
+                ValidationUi.DrawRequiredField(doorMeshProp,
+                    "A Single config needs the door mesh — without it nothing animates.");
             }
 
             EditorGUILayout.PropertyField(triggerVolumeObjectProp);
