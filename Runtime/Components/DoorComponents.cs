@@ -35,6 +35,11 @@ namespace AutomaticDoorSystem
         public quaternion OpenRotationBackward;
         public OpeningStyle OpeningStyle;
         public float3 OneWayDirection;
+        public SlidingStyle SlidingStyle;
+        /// <summary>Telescopic only: travel of the right (leading) panel, door-root local.</summary>
+        public float3 RightSlideOffset;
+        /// <summary>Telescopic only: 1 = right door stops where the left door sits (partial opening).</summary>
+        public byte OpenRightDoorOnly;
     }
 
     public struct DoorTriggerVolume : IComponentData
@@ -135,5 +140,11 @@ namespace AutomaticDoorSystem
         Forward = 0,   // Both doors open away from player (default behavior)
         BothWay = 1,   // Right door opens forward, left door opens backward
         OneWay = 2     // Both doors always open in a specific direction
+    }
+
+    public enum SlidingStyle : byte
+    {
+        Mirrored = 0,   // Panels part in opposite directions (default)
+        Telescopic = 1  // Both panels slide the same direction, right door leads, panels stack
     }
 }

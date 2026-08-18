@@ -149,9 +149,44 @@ namespace AutomaticDoorSystem.Editor
             }
             else
             {
+                bool isTelescopic = doorConfig.slidingStyle == DoorConfig.SlidingStyleEnum.Telescopic;
+
                 GUI.enabled = false;
-                EditorGUILayout.Vector3Field("Slide Open Offset", doorConfig.slideOpenOffset);
+                EditorGUILayout.EnumPopup("Sliding Style", doorConfig.slidingStyle);
+                EditorGUILayout.Vector3Field(isTelescopic ? "Slide Open Offset (Left)" : "Slide Open Offset",
+                    doorConfig.slideOpenOffset);
+                if (isTelescopic)
+                {
+                    EditorGUILayout.Vector3Field("Right Slide Open Offset", doorConfig.rightSlideOpenOffset);
+                    EditorGUILayout.Toggle("Open Right Door Only", doorConfig.openRightDoorOnly);
+                }
                 GUI.enabled = true;
+
+                if (isTelescopic)
+                {
+                    if (!isDouble)
+                    {
+                        EditorGUILayout.HelpBox(
+                            "Telescopic sliding only applies to Double doors - this Single door will use " +
+                            "standard sliding.",
+                            MessageType.Warning);
+                    }
+                    else if (doorConfig.rightSlideOpenOffset.magnitude <= doorConfig.slideOpenOffset.magnitude)
+                    {
+                        EditorGUILayout.HelpBox(
+                            "Right Slide Open Offset must be LONGER than Slide Open Offset - the right door " +
+                            "leads and travels further.",
+                            MessageType.Warning);
+                    }
+                    else if (Vector3.Dot(doorConfig.rightSlideOpenOffset.normalized,
+                                 doorConfig.slideOpenOffset.normalized) < 0.999f)
+                    {
+                        EditorGUILayout.HelpBox(
+                            "Both offsets must point in the SAME direction - telescopic panels slide the same " +
+                            "way and stack into one pocket.",
+                            MessageType.Warning);
+                    }
+                }
             }
 
             EditorGUILayout.Space();

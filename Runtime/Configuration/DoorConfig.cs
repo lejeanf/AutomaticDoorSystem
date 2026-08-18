@@ -27,6 +27,12 @@ namespace AutomaticDoorSystem
             OneWay
         }
 
+        public enum SlidingStyleEnum
+        {
+            Mirrored,
+            Telescopic
+        }
+
         [Header("Door Type Configuration")]
         [Tooltip("Movement type of the door - shared by all doors using this config")]
         public DoorMovementEnum doorMovement = DoorMovementEnum.Rotating;
@@ -51,8 +57,22 @@ namespace AutomaticDoorSystem
         public float openBackwardAngle = -90f;
 
         [Header("Sliding Door Settings")]
-        [Tooltip("Distance and direction to slide when opening (e.g., 1.5 units right = (1.5, 0, 0))")]
+        [Tooltip("Distance and direction to slide when opening (e.g., 1.5 units right = (1.5, 0, 0)). " +
+                 "For Telescopic style this is the LEFT panel's travel.")]
         public Vector3 slideOpenOffset = new Vector3(1.5f, 0, 0);
+
+        [Tooltip("Sliding Double only. Mirrored: panels part in opposite directions (default). " +
+                 "Telescopic: both panels slide in the SAME direction with different spans and stack " +
+                 "into one pocket - the right door leads, catches the left door, then both finish together.")]
+        public SlidingStyleEnum slidingStyle = SlidingStyleEnum.Mirrored;
+
+        [Tooltip("Telescopic only: travel of the RIGHT (leading) panel. Must point in the same " +
+                 "direction as Slide Open Offset and be longer.")]
+        public Vector3 rightSlideOpenOffset = new Vector3(3f, 0, 0);
+
+        [Tooltip("Telescopic only: the right door stops where the left door sits (the left door " +
+                 "never moves) - a partial opening.")]
+        public bool openRightDoorOnly = false;
 
         [Header("Animation Configuration")]
         [Range(0.1f, 5f)]

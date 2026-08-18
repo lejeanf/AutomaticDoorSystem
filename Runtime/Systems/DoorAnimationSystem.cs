@@ -240,6 +240,12 @@ namespace AutomaticDoorSystem
             var easedProgress = CalculateEasedProgress(doorState.StateTimer, door.AnimationDuration);
             var isOpening = doorState.CurrentState == DoorState.Opening;
 
+            if (door.Type == DoorType.SlidingDouble && transformData.SlidingStyle == SlidingStyle.Telescopic)
+            {
+                AnimateTelescopicSlidingDoor(ref state, in transformData, doorBuffer, easedProgress, isOpening);
+                return;
+            }
+
             for (var i = 0; i < doorBuffer.Length; i++)
             {
                 var doorData = doorBuffer[i];
@@ -263,6 +269,63 @@ namespace AutomaticDoorSystem
                     in openPos,
                     easedProgress,
                     isOpening);
+            }
+        }
+
+        /// <summary>
+        /// Telescopic travel along the shared slide direction. The right (leading) panel owns the
+        /// timeline; the left panel waits until the right one has covered the catch-up distance,
+        /// then follows in lockstep. Closing is the exact reverse: they return together until the
+        /// left panel is home, then the right panel finishes alone. With rightDoorOnly the right
+        /// panel's target is the catch-up point itself, so the left panel never moves.
+        /// </summary>
+        [BurstCompile]
+        public static void ComputeTelescopicTravel(
+            float rightSpan, float leftSpan, bool rightDoorOnly, float easedProgress, bool isOpening,
+            out float rightTravel, out float leftTravel)
+        {
+            var catchUp = math.max(rightSpan - leftSpan, 0f);
+            var targetSpan = rightDoorOnly ? catchUp : rightSpan;
+            var openFraction = isOpening ? easedProgress : 1f - easedProgress;
+            rightTravel = targetSpan * openFraction;
+            leftTravel = math.clamp(rightTravel - catchUp, 0f, leftSpan);
+        }
+
+        private void AnimateTelescopicSlidingDoor(
+            ref SystemState state,
+            in DoorTransformData transformData,
+            DynamicBuffer<DoubleDoorBuffer> doorBuffer,
+            float easedProgress,
+            bool isOpening)
+        {
+            var leftSpan = math.length(transformData.SlideOffset);
+            var rightSpan = math.length(transformData.RightSlideOffset);
+
+            ComputeTelescopicTravel(rightSpan, leftSpan, transformData.OpenRightDoorOnly == 1,
+                easedProgress, isOpening, out var rightTravel, out var leftTravel);
+
+            for (var i = 0; i < doorBuffer.Length; i++)
+            {
+                var doorData = doorBuffer[i];
+                if (!state.EntityManager.Exists(doorData.DoorEntity))
+                    continue;
+
+                var doorTransform = SystemAPI.GetComponentRW<LocalTransform>(doorData.DoorEntity);
+
+                float3 direction;
+                float travel;
+                if (doorData.IsLeftDoor == 1)
+                {
+                    direction = leftSpan > 1e-4f ? transformData.SlideOffset / leftSpan : float3.zero;
+                    travel = leftTravel;
+                }
+                else
+                {
+                    direction = rightSpan > 1e-4f ? transformData.RightSlideOffset / rightSpan : float3.zero;
+                    travel = rightTravel;
+                }
+
+                doorTransform.ValueRW.Position = transformData.InitialPosition + direction * travel;
             }
         }
 

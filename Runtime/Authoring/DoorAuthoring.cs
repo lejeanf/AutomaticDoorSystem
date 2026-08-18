@@ -417,7 +417,28 @@ namespace AutomaticDoorSystem
             Vector3 localOffset = transform.InverseTransformVector(doorConfig.slideOpenOffset);
             Vector3 worldOffset = transform.TransformVector(localOffset);
 
-            if (isDouble)
+            if (isDouble && doorConfig.slidingStyle == DoorConfig.SlidingStyleEnum.Telescopic)
+            {
+                // Both panels travel the same direction; the right one leads and goes further.
+                // With openRightDoorOnly the right arrow stops at the catch-up point (where the
+                // left door sits) and the left door does not move at all.
+                if (leftDoorMesh != null && !doorConfig.openRightDoorOnly)
+                {
+                    DrawSlideArrow(leftDoorMesh.position, worldOffset, Color.cyan);
+                }
+                if (rightDoorMesh != null)
+                {
+                    var rightOffset = doorConfig.rightSlideOpenOffset;
+                    if (doorConfig.openRightDoorOnly)
+                    {
+                        var rightSpan = rightOffset.magnitude;
+                        var catchUp = Mathf.Max(rightSpan - doorConfig.slideOpenOffset.magnitude, 0f);
+                        rightOffset = rightSpan > 1e-4f ? rightOffset / rightSpan * catchUp : Vector3.zero;
+                    }
+                    DrawSlideArrow(rightDoorMesh.position, rightOffset, Color.cyan);
+                }
+            }
+            else if (isDouble)
             {
                 if (leftDoorMesh != null)
                 {
@@ -698,7 +719,12 @@ namespace AutomaticDoorSystem
                     var openOffset = config.slideOpenOffset;
                     var localOffset = authoring.transform.InverseTransformVector(openOffset);
                     data.SlideOffset = new float3(localOffset.x, localOffset.y, localOffset.z);
-                    
+
+                    data.SlidingStyle = (SlidingStyle)config.slidingStyle;
+                    var rightLocal = authoring.transform.InverseTransformVector(config.rightSlideOpenOffset);
+                    data.RightSlideOffset = new float3(rightLocal.x, rightLocal.y, rightLocal.z);
+                    data.OpenRightDoorOnly = (byte)(config.openRightDoorOnly ? 1 : 0);
+
                     if (doorType == DoorType.SlidingSingle && authoring.doorMesh != null)
                     {
                         data.InitialPosition = authoring.doorMesh.localPosition;
