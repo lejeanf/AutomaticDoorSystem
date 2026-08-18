@@ -260,7 +260,9 @@ namespace AutomaticDoorSystem
                     transformData.SlideOffset.y,
                     transformData.SlideOffset.z);
 
-                var closedPos = transformData.InitialPosition;
+                // Each panel slides from its OWN authored position - using the root's InitialPosition
+                // here made every off-origin panel pop on the first animation frame.
+                var closedPos = doorData.InitialLocalPosition;
                 var openPos = closedPos + localSlideOffset;
 
                 AnimatePosition(
@@ -325,7 +327,9 @@ namespace AutomaticDoorSystem
                     travel = rightTravel;
                 }
 
-                doorTransform.ValueRW.Position = transformData.InitialPosition + direction * travel;
+                // Travel is applied along the slide direction only, on top of the panel's own
+                // authored closed position - the other axes (like parallel-rail Z offsets) stay put.
+                doorTransform.ValueRW.Position = doorData.InitialLocalPosition + direction * travel;
             }
         }
 

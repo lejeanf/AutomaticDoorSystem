@@ -81,6 +81,12 @@ namespace AutomaticDoorSystem
         public float3 ColliderSize;   // BoxCollider size from prefab
         public float3 ColliderCenter; // BoxCollider center from prefab
         public byte HasColliderData;  // 1 if collider data was extracted from prefab
+        /// <summary>
+        /// The panel's authored closed local position. Sliding animation adds its travel on top of
+        /// this instead of overwriting the whole position, so the panel's placement on the other
+        /// axes (e.g. parallel-rail Z offsets) survives the first animation frame.
+        /// </summary>
+        public float3 InitialLocalPosition;
     }
 
     public struct DoorAudioEventComponent : IComponentData

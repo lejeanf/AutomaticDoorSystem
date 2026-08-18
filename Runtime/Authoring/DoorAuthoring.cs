@@ -621,7 +621,8 @@ namespace AutomaticDoorSystem
                             IsLeftDoor = 1,
                             ColliderSize = leftColliderData.size,
                             ColliderCenter = leftColliderData.center,
-                            HasColliderData = leftColliderData.hasData
+                            HasColliderData = leftColliderData.hasData,
+                            InitialLocalPosition = authoring.leftDoorMesh.localPosition
                         });
 
                     }
@@ -638,7 +639,8 @@ namespace AutomaticDoorSystem
                             IsLeftDoor = 0,
                             ColliderSize = rightColliderData.size,
                             ColliderCenter = rightColliderData.center,
-                            HasColliderData = rightColliderData.hasData
+                            HasColliderData = rightColliderData.hasData,
+                            InitialLocalPosition = authoring.rightDoorMesh.localPosition
                         });
                     }
                 }
@@ -655,7 +657,8 @@ namespace AutomaticDoorSystem
                         IsLeftDoor = 0,
                         ColliderSize = colliderData.size,
                         ColliderCenter = colliderData.center,
-                        HasColliderData = colliderData.hasData
+                        HasColliderData = colliderData.hasData,
+                        InitialLocalPosition = authoring.doorMesh.localPosition
                     });
 
                 }
