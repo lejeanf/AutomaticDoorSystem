@@ -8,14 +8,15 @@ A high-performance automatic door system using Unity ECS (Entities) with pooled 
 
 1. [System Overview](#system-overview)
 2. [Prerequisites](#prerequisites)
-3. [Part 1: Creating Door Configurations](#part-1-creating-door-configurations)
-4. [Part 2: Setting Up Door Prefabs](#part-2-setting-up-door-prefabs)
-5. [Part 3: Adding Doors to Subscenes](#part-3-adding-doors-to-subscenes)
-6. [Part 4: Main Scene Setup](#part-4-main-scene-setup)
-7. [Part 5: Setting Up Door Identifiers](#part-5-setting-up-door-identifiers)
-8. [Part 6: Player Setup](#part-6-player-setup)
-9. [Part 7: Audio Configuration (Optional)](#part-7-audio-configuration-optional)
-10. [Troubleshooting](#troubleshooting)
+3. [Setup Validator](#setup-validator)
+4. [Part 1: Creating Door Configurations](#part-1-creating-door-configurations)
+5. [Part 2: Setting Up Door Prefabs](#part-2-setting-up-door-prefabs)
+6. [Part 3: Adding Doors to Subscenes](#part-3-adding-doors-to-subscenes)
+7. [Part 4: Main Scene Setup](#part-4-main-scene-setup)
+8. [Part 5: Player Setup](#part-5-player-setup)
+9. [Part 6: Audio Configuration](#part-6-audio-configuration)
+10. [Migrating from 1.x](#migrating-from-1x)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -30,30 +31,60 @@ This door system uses:
 ### Architecture Diagram
 
 ```
-SUBSCENE (ECS World)                    MAIN SCENE (MonoBehaviour World)
-+---------------------------+           +----------------------------------+
-| Door Prefab               |           | DoorManagement                   |
-| - DoorAuthoring          |           | - BoxColliderPoolManager         |
-| - DoorConfig (SO)        |  <---->   | - AudioSourcePoolManager         |
-| - Door Meshes + Colliders |           | - DoorDataBridge                 |
-| - TriggerVolume          |           | - DoorAudioBridge                |
-+---------------------------+           +----------------------------------+
-                                                      |
-                                                      v
-                                        +----------------------------------+
-                                        | DoorIdentifier (per door)        |
-                                        | - Links doorNumber to ECS door   |
-                                        | - Audio configuration reference  |
-                                        +----------------------------------+
+SUBSCENE (baked to entities)            MAIN SCENE (MonoBehaviour world)
++-------------------------------+       +----------------------------------+
+| Door Prefab                   |       | DoorManagement                   |
+| - DoorAuthoring               |       | - DoorDataBridge                 |
+|   - doorId                    |       | - DoorAudioBridge                |
+|   - DoorConfig (SO)           | ----> | - BoxColliderPoolManager         |
+|   - DoorAudioConfiguration(SO)|       | - AudioSourcePoolManager         |
+| - Door Meshes + BoxColliders  |       +----------------------------------+
+| - TriggerVolume               |
+|                               |
+| Player object                 |
+| - PlayerAuthoring (follows    |
+|   Camera.main at runtime)     |
+| - DoorTriggerableAuthoring    |
++-------------------------------+
 ```
+
+Everything a door needs is authored on **DoorAuthoring** and baked into the door entity,
+including its audio configuration. The main scene only holds the four manager components;
+there is nothing to mirror per door.
+
+> **Note for 1.x users:** audio configuration used to live on a `DoorIdentifier` GameObject
+> in the main scene. That component is obsolete - see [Migrating from 1.x](#migrating-from-1x).
 
 ---
 
 ## Prerequisites
 
-- Unity 2022.3 LTS or newer
+- Unity 6000.0 or newer
 - Entities package installed
 - Basic understanding of Unity's Subscene system
+
+---
+
+## Setup Validator
+
+Before working through the setup by hand, open:
+
+**Tools > AutomaticDoorSystem > Setup Validator**
+
+It checks the loaded scenes and reports, with one-click fixes where possible:
+
+- the four manager components in the main scene (and whether any of them ended up inside a subscene, where they would never run)
+- `Camera.main`, which both pools cull against
+- the player's `DoorTriggerableAuthoring` and whether its layer is allowed by the door configs
+- per door: missing `DoorConfig`, missing meshes, missing trigger volume, missing panel BoxColliders
+- **duplicate Door Ids**, the most common cause of doors silently losing their collider and sound
+- leftover `DoorIdentifier` objects from 1.x, with a migrate-and-delete button
+
+It also creates the assets a fresh project needs, asking where to save each one:
+a full set of `DoorConfig` assets (all four door types), a `DoorAudioConfiguration`, and a
+pooled AudioSource prefab.
+
+Door checks only cover **open** subscenes - the validator lists any closed ones and offers to open them.
 
 ---
 
@@ -129,6 +160,7 @@ Door_SingleRotating          <- Root GameObject (DoorAuthoring goes here)
 | **Right Door Mesh** | (Double doors) Drag RightDoorMesh here |
 | **Trigger Volume Object** | Drag TriggerVolume GameObject here |
 | **Door Config** | Drag your DoorConfig asset here |
+| **Door Audio Config** | Drag a DoorAudioConfiguration asset here (leave empty for a silent door) |
 | **Enable Debug** | Check for gizmo visualization |
 
 ![Screenshot: 04_doorauthoring_inspector.png](images/04_doorauthoring_inspector.png)
@@ -171,7 +203,14 @@ Door_SingleRotating          <- Root GameObject (DoorAuthoring goes here)
 ![Screenshot: 07_triggervolume_inspector.png](images/07_triggervolume_inspector.png)
 *DoorTriggerVolumeAuthoring component settings*
 
-The trigger volume appears as a **green wireframe box** when selected in the Scene view.
+The trigger volume appears as a **green wireframe box** when either the TriggerVolume object or
+the door root is selected in the Scene view, along with three markers:
+
+| Marker | Colour | Meaning |
+|--------|--------|---------|
+| **Bottom center** | orange | Lowest point the volume reaches - raise it above the floor and nothing will trigger the door |
+| **Top center** | cyan | Highest point the volume reaches - it has to clear the player's camera height |
+| **Audio anchor** | yellow | Volume centre, where the pooled AudioSource is parked. Put it mid-doorway rather than at the door's hinge |
 
 ![Screenshot: 08_triggervolume_gizmo.png](images/08_triggervolume_gizmo.png)
 *Scene view showing the trigger volume gizmo*
@@ -207,11 +246,15 @@ The trigger volume appears as a **green wireframe box** when selected in the Sce
 
 ### Step 3.3: Assign Unique Door IDs
 
-Each door **must have a unique Door ID**. This ID links the ECS door to its MonoBehaviour DoorIdentifier.
+Each door **must have a unique Door ID**. It keys the collider pool, the audio pool and the
+lock/unlock events, so two doors sharing an ID means all but one of them silently loses its
+collider and its sound.
 
 1. Select the door in the subscene
 2. In the DoorAuthoring component, set **Door Id** to a unique number
-3. Write down or remember this number - you'll need it for the DoorIdentifier later
+
+> Dropped several door prefabs in without touching this? They all sit on the default `0`.
+> **Tools > AutomaticDoorSystem > Setup Validator** finds every duplicate and renumbers them for you.
 
 | Door | Door ID |
 |------|---------|
@@ -309,94 +352,63 @@ Your DoorManagement GameObject should now have all 4 components:
 
 ---
 
-## Part 5: Setting Up Door Identifiers
+## Part 5: Player Setup
 
-**DoorIdentifier** components live in the **Main Scene** and link each door's audio configuration to its Door ID.
+Door detection runs entirely in ECS: it only reacts to **entities** that carry
+`DoorTriggerableTag`. That tag comes from baking `DoorTriggerableAuthoring`, so the component
+has to sit on a GameObject **inside a subscene** - one added to the main scene is never baked
+and will never open a door.
 
-### Step 5.1: Create DoorIdentifier GameObjects
+### Step 5.1: Add DoorTriggerableAuthoring to the player proxy
 
-For **each door** in your subscenes, create a corresponding DoorIdentifier in the Main Scene:
+In the world subscene, find (or create) the GameObject carrying **PlayerAuthoring**
+(from `fr.jeanf.scenemanagement`). That object bakes into an entity which follows `Camera.main`
+every frame, so it stands in for the real player rig that lives in the main scene.
 
-1. Create an empty GameObject in the Main Scene
-2. Name it `DoorIdentifier_[DoorID]` (e.g., `DoorIdentifier_001`)
-3. Position it at the same location as the subscene door (approximate is fine)
-
-![Screenshot: 18_dooridentifier_create.png](images/18_dooridentifier_create.png)
-*DoorIdentifier GameObject created in Main Scene*
-
-### Step 5.2: Add and Configure DoorIdentifier Component
-
-1. Add the **DoorIdentifier** component
-2. Configure these settings:
-
-| Field | Description | Value |
-|-------|-------------|-------|
-| **Door Number** | **Must match** the Door ID in DoorAuthoring | Same as subscene door |
-| **Audio Configuration** | Optional audio settings asset | Assign if using custom audio |
-
-![Screenshot: 19_dooridentifier_inspector.png](images/19_dooridentifier_inspector.png)
-*DoorIdentifier component showing Door Number field*
-
-### Step 5.3: Organize DoorIdentifiers
-
-Create a parent GameObject to keep things organized:
-
-```
-DoorIdentifiers              <- Parent (empty GameObject)
-  ├── DoorIdentifier_001
-  ├── DoorIdentifier_002
-  ├── DoorIdentifier_003
-  └── ...
-```
-
-![Screenshot: 20_dooridentifiers_organized.png](images/20_dooridentifiers_organized.png)
-*Organized DoorIdentifiers under a parent*
-
-> **Tip:** You can batch-create DoorIdentifiers for many doors at once using a simple editor script.
-
----
-
-## Part 6: Player Setup
-
-The player needs to be able to trigger doors.
-
-### Step 6.1: Add DoorTriggerableAuthoring
-
-1. Select your **Player** GameObject (the one with the CharacterController or Rigidbody)
+1. Select that GameObject inside the **subscene**
 2. Add the **DoorTriggerableAuthoring** component
-3. Set the Player's **Layer** to match the door's **Can Open Layer Mask**
 
 ![Screenshot: 21_player_triggerable.png](images/21_player_triggerable.png)
-*Player with DoorTriggerableAuthoring component*
+*Player proxy with DoorTriggerableAuthoring component*
 
-### Step 6.2: Verify Player Layer
+> Other entities can open doors too - add `DoorTriggerableAuthoring` to any baked NPC or vehicle.
+> Only the player proxy needs `PlayerAuthoring`.
 
-1. Check your Player's layer (top-right of Inspector)
-2. Ensure your DoorConfig's **Can Open Layer Mask** includes this layer
+### Step 5.2: Verify the layer
+
+1. Check the layer of the object you just added the component to
+2. Ensure every DoorConfig's **Can Open Layer Mask** includes that layer
+
+The Setup Validator reports any DoorConfig that excludes it, and can add the layer for you.
 
 ![Screenshot: 22_player_layer_check.png](images/22_player_layer_check.png)
 *Checking player layer matches DoorConfig layer mask*
 
-### Step 6.3: Verify Camera.main
+### Step 5.3: Verify Camera.main
 
-The pooling system uses **Camera.main** for distance calculations.
+Both pools cull by distance to **Camera.main**, and the player proxy entity follows it.
 
 1. Ensure your main camera has the **MainCamera** tag
 2. Or ensure it's the first enabled camera in the scene
 
 ---
 
-## Part 7: Audio Configuration (Optional)
+## Part 6: Audio Configuration
 
-### Step 7.1: Create Audio Configuration Asset
+Audio is configured per door on **DoorAuthoring** and baked into the door entity. At runtime the
+`AudioSourcePoolManager` parks one of its pooled AudioSources at the **centre of the door's
+trigger volume** and hands it the configuration - nothing has to be mirrored in the main scene.
 
-1. Right-click in Project > **Create > Automatic Door System > Door Audio Configuration**
+### Step 6.1: Create an Audio Configuration Asset
+
+1. Right-click in Project > **Create > AutomaticDoorSystem > DoorAudioConfiguration**
+   (or use the Setup Validator's create button)
 2. Name it (e.g., `DoorAudio_Wood`)
 
 ![Screenshot: 23_create_audioconfig.png](images/23_create_audioconfig.png)
 *Creating a Door Audio Configuration*
 
-### Step 7.2: Configure Audio Settings
+### Step 6.2: Configure Audio Settings
 
 | Setting | Description |
 |---------|-------------|
@@ -406,19 +418,48 @@ The pooling system uses **Camera.main** for distance calculations.
 | **Open Sound Clips** | Array of sounds for opening |
 | **Close Sound Clips** | Array of sounds for closing |
 | **Lock/Unlock Sound Clips** | Sounds for lock events |
+| **Steam Audio sections** | Applied to the pooled SteamAudioSource, if the prefab has one |
 
 ![Screenshot: 24_audioconfig_inspector.png](images/24_audioconfig_inspector.png)
 *Door Audio Configuration with sound clips assigned*
 
-### Step 7.3: Assign to DoorIdentifier
+### Step 6.3: Assign to the Door
 
-1. Select your DoorIdentifier
-2. Drag the Audio Configuration asset to the **Audio Configuration** field
+1. Select the door in the subscene
+2. Drag the asset onto **Door Audio Config** on the DoorAuthoring component
+3. Close the subscene so it rebakes
 
-![Screenshot: 25_assign_audioconfig.png](images/25_assign_audioconfig.png)
-*Assigning audio configuration to DoorIdentifier*
+Doors sharing a material or size normally share one configuration asset.
+
+### Step 6.4: Optional - a pooled AudioSource prefab
+
+By default the pool creates bare AudioSources. Assign an **Audio Source Prefab** on the
+`AudioSourcePoolManager` to control what gets pooled - most importantly to include a
+`SteamAudioSource` so door sounds get Steam Audio spatialization. The Setup Validator can
+create and assign a suitable prefab.
 
 ---
+
+## Migrating from 1.x
+
+In 1.x, each door needed a matching `DoorIdentifier` GameObject in the main scene to carry its
+audio configuration, because `DoorAuthoring` does not exist at runtime once a subscene is baked.
+2.0 bakes the configuration into the door entity as a `UnityObjectRef`, so those objects are gone.
+
+`DoorIdentifier` still compiles - so old scenes open without missing-script errors - but it does
+nothing at runtime and will be removed in a future release.
+
+To migrate:
+
+1. Open the subscene(s) holding the doors, so the validator can match Door Ids
+2. **Tools > AutomaticDoorSystem > Setup Validator**
+3. Under *Legacy DoorIdentifier objects*, press **Migrate and delete**
+
+That copies each `audioConfiguration` onto the DoorAuthoring with the matching `doorId`, then
+deletes the leftover objects. DoorIdentifiers whose door is in a closed subscene are left alone
+so nothing is lost - open that subscene and run it again.
+
+Finally, **close and reopen the subscenes** so the doors rebake with the audio reference.
 
 ## Troubleshooting
 
@@ -437,27 +478,38 @@ The pooling system uses **Camera.main** for distance calculations.
 
 ### No door sounds playing
 
-1. **Check AudioSourcePoolManager** exists in Main Scene
-2. **Check DoorIdentifier** has matching Door Number
-3. **Check Audio Configuration** has sound clips assigned
+1. **Check the door has a Door Audio Config** on its DoorAuthoring, with clips assigned
+2. **Check the subscene was rebaked** after assigning it (close and reopen the subscene)
+3. **Check AudioSourcePoolManager and DoorAudioBridge** exist in the Main Scene
 4. **Check Camera.main** exists (tagged MainCamera)
+5. **Check for duplicate Door Ids** - a duplicate keeps its door out of the audio pool
 
-### Door ID mismatch warning
+### "An item with the same key has already been added: N"
 
-- Ensure **DoorAuthoring.doorId** matches **DoorIdentifier.doorNumber** exactly
+Two or more doors share Door Id `N`. Run the Setup Validator and press **Assign unique Door Ids**.
+(2.0 also stopped throwing here - the duplicate is now dropped with an explanatory error instead.)
+
+### Doors moved/rotated and the trigger volume looks off
+
+The trigger volume centre is stored relative to the door root and is now transformed by the door's
+full rotation and scale. If a rotated door's detection zone was tuned against the 1.x behaviour
+(which ignored rotation), re-check its **Volume Center** using the gizmo markers.
 
 ---
 
 ## Quick Reference Checklist
 
+> All of this is checked by **Tools > AutomaticDoorSystem > Setup Validator**.
+
 ### Per Door Prefab:
 - [ ] Root has **DoorAuthoring** with DoorConfig assigned
 - [ ] Door meshes have **BoxCollider** sized to fit
-- [ ] TriggerVolume has **DoorTriggerVolumeAuthoring**
+- [ ] TriggerVolume has **DoorTriggerVolumeAuthoring**, assigned to **Trigger Volume Object**
 - [ ] Meshes assigned in DoorAuthoring (single or left/right)
 
 ### Per Door Instance (in Subscene):
 - [ ] **Unique Door ID** set in DoorAuthoring
+- [ ] **Door Audio Config** assigned (unless the door is meant to be silent)
 
 ### Main Scene (once):
 - [ ] **DoorManagement** GameObject exists
@@ -465,12 +517,10 @@ The pooling system uses **Camera.main** for distance calculations.
 - [ ] Has **AudioSourcePoolManager**
 - [ ] Has **DoorDataBridge**
 - [ ] Has **DoorAudioBridge**
-
-### Per Door (in Main Scene):
-- [ ] **DoorIdentifier** with matching Door Number
-- [ ] Optional: Audio Configuration assigned
+- [ ] Optional: **Audio Source Prefab** assigned for Steam Audio spatialization
 
 ### Player (once):
-- [ ] Has **DoorTriggerableAuthoring**
-- [ ] Layer matches DoorConfig's Can Open Layer Mask
+- [ ] Player proxy **inside the world subscene** has **DoorTriggerableAuthoring**
+- [ ] That object also has **PlayerAuthoring** so it follows Camera.main
+- [ ] Its layer is included in every DoorConfig's Can Open Layer Mask
 - [ ] Main Camera has **MainCamera** tag

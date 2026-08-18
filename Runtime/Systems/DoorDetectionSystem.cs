@@ -128,7 +128,11 @@ namespace AutomaticDoorSystem
                 if (!CheckableDoorIds.Contains(door.DoorId))
                     return;
 
-                var triggerWorldCenter = doorTransform.Position + trigger.Center;
+                // Center is stored in the door root's local space, so it has to go through the full
+                // transform - adding it to the root position ignores rotation and scale and puts the
+                // volume in the wrong place on any rotated door. The volume test itself stays
+                // world-axis-aligned, matching how Size is authored.
+                var triggerWorldCenter = math.transform(doorTransform.Value, trigger.Center);
 
                 for (var i = 0; i < TriggerablePositions.Length; i++)
                 {

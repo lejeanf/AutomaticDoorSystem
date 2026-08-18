@@ -26,6 +26,7 @@ namespace AutomaticDoorSystem.Utilities
         private NativeArray<DoorCandidate> _candidates;
         private NativeArray<int> _currentAssignments;
         private NativeArray<bool> _poolSlotUsed;
+        private NativeArray<bool> _poolSlotLocked;
         private int _candidateCount;
 
         public DoorSelectionStrategy(int maxCandidates, int maxPoolSize, Allocator allocator)
@@ -33,6 +34,7 @@ namespace AutomaticDoorSystem.Utilities
             _candidates = new NativeArray<DoorCandidate>(maxCandidates, allocator);
             _currentAssignments = new NativeArray<int>(maxPoolSize, allocator);
             _poolSlotUsed = new NativeArray<bool>(maxPoolSize, allocator);
+            _poolSlotLocked = new NativeArray<bool>(maxPoolSize, allocator);
             _candidateCount = 0;
 
             for (int i = 0; i < maxPoolSize; i++)
@@ -41,11 +43,26 @@ namespace AutomaticDoorSystem.Utilities
             }
         }
 
+        public bool IsCreated => _candidates.IsCreated;
+
         public void Dispose()
         {
             if (_candidates.IsCreated) _candidates.Dispose();
             if (_currentAssignments.IsCreated) _currentAssignments.Dispose();
             if (_poolSlotUsed.IsCreated) _poolSlotUsed.Dispose();
+            if (_poolSlotLocked.IsCreated) _poolSlotLocked.Dispose();
+        }
+
+        /// <summary>
+        /// Marks a pool slot as un-stealable for the next <see cref="AssignPoolSlots"/> call.
+        /// Used by the audio pool to protect a source that is mid-playback.
+        /// </summary>
+        public void SetSlotLocked(int poolIndex, bool locked)
+        {
+            if (poolIndex >= 0 && poolIndex < _poolSlotLocked.Length)
+            {
+                _poolSlotLocked[poolIndex] = locked;
+            }
         }
 
         public void BeginSelection()
@@ -107,6 +124,44 @@ namespace AutomaticDoorSystem.Utilities
             NativeArray<DoorCandidate>.Copy(tempArray, _candidates, _candidateCount);
         }
 
+        /// <summary>
+        /// Drops candidates that repeat a doorId already seen, keeping the first occurrence.
+        /// Call after <see cref="SortByDistance"/> so the nearest door wins.
+        /// <para>
+        /// Two doors sharing a doorId is always a scene authoring mistake (typically several
+        /// DoorAuthoring components left on the default id 0). Pool slots are keyed by doorId,
+        /// so without this the same id claims two slots and the next frame throws
+        /// "An item with the same key has already been added". Use the Setup Validator
+        /// (Tools > AutomaticDoorSystem > Setup Validator) to find and fix the duplicates.
+        /// </para>
+        /// </summary>
+        /// <returns>Number of duplicate candidates removed.</returns>
+        public int RemoveDuplicateIds()
+        {
+            if (_candidateCount <= 1) return 0;
+
+            var seenIds = new NativeHashSet<int>(_candidateCount, Allocator.Temp);
+            int writeIndex = 0;
+
+            for (int i = 0; i < _candidateCount; i++)
+            {
+                if (!seenIds.Add(_candidates[i].doorId))
+                    continue;
+
+                if (writeIndex != i)
+                {
+                    _candidates[writeIndex] = _candidates[i];
+                }
+                writeIndex++;
+            }
+
+            seenIds.Dispose();
+
+            int removed = _candidateCount - writeIndex;
+            _candidateCount = writeIndex;
+            return removed;
+        }
+
         public void RemoveSpatialDuplicates(float minimumSpacing)
         {
             if (_candidateCount <= 1) return;
@@ -143,6 +198,10 @@ namespace AutomaticDoorSystem.Utilities
 
         public int AssignPoolSlots(int maxPoolSize, bool keepOutOfRangeAssignments, float reassignmentThreshold)
         {
+            // The pool arrays were sized at construction; a caller raising its maxPoolSize field
+            // afterwards must not walk off the end of them.
+            maxPoolSize = math.min(maxPoolSize, _currentAssignments.Length);
+
             for (int i = 0; i < _poolSlotUsed.Length && i < maxPoolSize; i++)
             {
                 _poolSlotUsed[i] = false;
@@ -156,12 +215,18 @@ namespace AutomaticDoorSystem.Utilities
                 inRangeDoors.Add(_candidates[i].doorId);
             }
 
+            // A doorId must never hold two slots. If it somehow does (duplicate ids in the scene,
+            // or an older build that assigned before this guard existed), free the extra slot
+            // rather than letting NativeHashMap.Add throw.
             NativeHashMap<int, int> doorToPoolIndex = new NativeHashMap<int, int>(maxPoolSize, Allocator.Temp);
             for (int i = 0; i < maxPoolSize; i++)
             {
-                if (_currentAssignments[i] != -1)
+                int assignedDoorId = _currentAssignments[i];
+                if (assignedDoorId == -1) continue;
+
+                if (!doorToPoolIndex.TryAdd(assignedDoorId, i))
                 {
-                    doorToPoolIndex.Add(_currentAssignments[i], i);
+                    _currentAssignments[i] = -1;
                 }
             }
 
@@ -203,6 +268,7 @@ namespace AutomaticDoorSystem.Utilities
                 {
                     _currentAssignments[nextFreeSlot] = doorId;
                     _poolSlotUsed[nextFreeSlot] = true;
+                    doorToPoolIndex.TryAdd(doorId, nextFreeSlot);
                     nextFreeSlot++;
                 }
                 else
@@ -210,8 +276,21 @@ namespace AutomaticDoorSystem.Utilities
                     int victimSlot = FindSlotToReassign(i, inRangeDoors, maxPoolSize, reassignmentThreshold);
                     if (victimSlot != -1)
                     {
+                        doorToPoolIndex.Remove(_currentAssignments[victimSlot]);
                         _currentAssignments[victimSlot] = doorId;
                         _poolSlotUsed[victimSlot] = true;
+                        doorToPoolIndex.TryAdd(doorId, victimSlot);
+                    }
+                }
+            }
+
+            if (!keepOutOfRangeAssignments)
+            {
+                for (int i = 0; i < maxPoolSize; i++)
+                {
+                    if (!_poolSlotUsed[i] && !_poolSlotLocked[i])
+                    {
+                        _currentAssignments[i] = -1;
                     }
                 }
             }
@@ -269,6 +348,7 @@ namespace AutomaticDoorSystem.Utilities
             for (int i = 0; i < maxPoolSize; i++)
             {
                 if (_currentAssignments[i] == -1) continue;
+                if (i < _poolSlotLocked.Length && _poolSlotLocked[i]) continue;
 
                 bool isInRange = inRangeDoors.Contains(_currentAssignments[i]);
 

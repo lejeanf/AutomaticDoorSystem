@@ -1,11 +1,17 @@
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
 
 namespace AutomaticDoorSystem.Utilities
 {
+    /// <summary>
+    /// Reads door entities into plain data the pool managers can use. Runs before both pools so
+    /// their Awake finds an Instance already, instead of racing to add a second bridge.
+    /// </summary>
+    [DefaultExecutionOrder(-100)]
     public class DoorDataBridge : MonoBehaviour
     {
         public static DoorDataBridge Instance { get; private set; }
@@ -20,9 +26,12 @@ namespace AutomaticDoorSystem.Utilities
             public Vector3 slideOffset;
             public Vector3 triggerSize;
             public Vector3 triggerCenter;
+            /// <summary>World centre of the trigger volume - where the pooled AudioSource is placed.</summary>
+            public Vector3 audioPosition;
             public bool isLocked;
             public Entity rootEntity;
-            public DoorIdentifier doorIdentifier;
+            /// <summary>Baked from DoorAuthoring.doorAudioConfig; null for a silent door.</summary>
+            public DoorAudioConfiguration audioConfig;
         }
 
         public struct DoorPanelInfo
@@ -39,9 +48,9 @@ namespace AutomaticDoorSystem.Utilities
         private EntityManager _entityManager;
         private EntityQuery _doorQuery;
         private List<DoorInfo> _cachedDoorInfo;
-        private Dictionary<int, DoorIdentifier> _doorIdentifiers;
         private Dictionary<int, Entity> _doorEntityCache;
         private float _cacheRefreshTimer;
+        private bool _duplicateIdWarningLogged;
         private const float CACHE_REFRESH_INTERVAL = 1f;
         private DoorPanelInfo[] _panelArrayCache = new DoorPanelInfo[4];
 
@@ -130,7 +139,6 @@ namespace AutomaticDoorSystem.Utilities
 
             Instance = this;
             _cachedDoorInfo = new List<DoorInfo>(500);
-            _doorIdentifiers = new Dictionary<int, DoorIdentifier>();
             _doorEntityCache = new Dictionary<int, Entity>();
             _cacheRefreshTimer = 0f;
         }
@@ -163,39 +171,7 @@ namespace AutomaticDoorSystem.Utilities
 
         private void Start()
         {
-            RegisterAllDoorIdentifiers();
             Invoke(nameof(InitialRefresh), 0.2f);
-        }
-
-        private void RegisterAllDoorIdentifiers()
-        {
-            var allIdentifiers =  FindObjectsByType<DoorIdentifier>(FindObjectsInactive.Include, FindObjectsSortMode.None);;
-            foreach (var identifier in allIdentifiers)
-            {
-                RegisterDoorIdentifier(identifier);
-            }
-        }
-
-        public void RegisterDoorIdentifier(DoorIdentifier identifier)
-        {
-            if (identifier == null) return;
-
-            if (_doorIdentifiers.ContainsKey(identifier.doorNumber))
-            {
-                _doorIdentifiers[identifier.doorNumber] = identifier;
-            }
-            else
-            {
-                _doorIdentifiers.Add(identifier.doorNumber, identifier);
-            }
-        }
-
-        public void UnregisterDoorIdentifier(DoorIdentifier identifier)
-        {
-            if (identifier != null && _doorIdentifiers.ContainsKey(identifier.doorNumber))
-            {
-                _doorIdentifiers.Remove(identifier.doorNumber);
-            }
         }
 
         private void InitialRefresh()
@@ -235,14 +211,15 @@ namespace AutomaticDoorSystem.Utilities
 
             var entities = _doorQuery.ToEntityArray(Allocator.Temp);
 
+            int duplicateIds = 0;
+
             for (int i = 0; i < doorComponents.Length; i++)
             {
                 int doorId = doorComponents[i].DoorId;
-                DoorIdentifier identifier = null;
 
-                if (_doorIdentifiers.TryGetValue(doorId, out var foundIdentifier))
+                if (_doorEntityCache.ContainsKey(doorId))
                 {
-                    identifier = foundIdentifier;
+                    duplicateIds++;
                 }
 
                 _doorEntityCache[doorId] = entities[i];
@@ -257,12 +234,23 @@ namespace AutomaticDoorSystem.Utilities
                     slideOffset = doorTransforms[i].SlideOffset,
                     triggerSize = triggers[i].Size,
                     triggerCenter = triggers[i].Center,
+                    audioPosition = math.transform(transforms[i].Value, triggers[i].Center),
                     isLocked = doorStates[i].IsLocked == 1,
                     rootEntity = entities[i],
-                    doorIdentifier = identifier
+                    audioConfig = GetAudioConfig(entities[i])
                 };
 
                 _cachedDoorInfo.Add(doorInfo);
+            }
+
+            if (duplicateIds > 0 && !_duplicateIdWarningLogged)
+            {
+                _duplicateIdWarningLogged = true;
+                Debug.LogError(
+                    $"[DoorDataBridge] {duplicateIds} door(s) reuse a Door Id already taken by another door " +
+                    $"({doorComponents.Length} doors, {_doorEntityCache.Count} distinct ids). Door Ids key every " +
+                    "lookup in this system, so the duplicates will get no colliders and no audio. " +
+                    "Run Tools > AutomaticDoorSystem > Setup Validator to find and renumber them.", this);
             }
 
             entities.Dispose();
@@ -299,12 +287,6 @@ namespace AutomaticDoorSystem.Utilities
             var transform = _entityManager.GetComponentData<LocalToWorld>(doorEntity);
             var trigger = _entityManager.GetComponentData<DoorTriggerVolume>(doorEntity);
 
-            DoorIdentifier identifier = null;
-            if (_doorIdentifiers.TryGetValue(doorId, out var foundIdentifier))
-            {
-                identifier = foundIdentifier;
-            }
-
             info = new DoorInfo
             {
                 doorId = doorComponent.DoorId,
@@ -315,12 +297,25 @@ namespace AutomaticDoorSystem.Utilities
                 slideOffset = doorTransform.SlideOffset,
                 triggerSize = trigger.Size,
                 triggerCenter = trigger.Center,
+                audioPosition = math.transform(transform.Value, trigger.Center),
                 isLocked = doorState.IsLocked == 1,
                 rootEntity = doorEntity,
-                doorIdentifier = identifier
+                audioConfig = GetAudioConfig(doorEntity)
             };
 
             return true;
+        }
+
+        /// <summary>
+        /// Resolves the DoorAudioConfiguration baked onto the door entity. Doors baked before the
+        /// config moved onto DoorAuthoring have no such component, hence the HasComponent guard.
+        /// </summary>
+        private DoorAudioConfiguration GetAudioConfig(Entity doorEntity)
+        {
+            if (!_entityManager.HasComponent<DoorAudioConfigReference>(doorEntity))
+                return null;
+
+            return _entityManager.GetComponentData<DoorAudioConfigReference>(doorEntity).Config.Value;
         }
 
         public bool IsDoorLocked(int doorId)

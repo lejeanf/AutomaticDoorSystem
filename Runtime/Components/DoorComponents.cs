@@ -44,11 +44,15 @@ namespace AutomaticDoorSystem
         public int LayerMask; // Bitmask for entities that can trigger door
     }
 
-    public struct DoorAudioConfig : IComponentData
+    /// <summary>
+    /// Per-door audio settings, baked from <see cref="DoorAuthoring.doorAudioConfig"/>.
+    /// A <see cref="UnityObjectRef{T}"/> survives subscene serialization, so the pooled
+    /// AudioSources in the main scene can read the ScriptableObject straight off the door
+    /// entity - no companion GameObject is needed in the main scene.
+    /// </summary>
+    public struct DoorAudioConfigReference : IComponentData
     {
-        public int OpenSoundId;
-        public int CloseSoundId;
-        public float SoundDelayOffset; // Offset for closing sound timing
+        public UnityObjectRef<DoorAudioConfiguration> Config;
     }
 
     public struct DoorTriggerableTag : IComponentData { }

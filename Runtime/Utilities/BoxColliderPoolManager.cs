@@ -46,6 +46,7 @@ namespace AutomaticDoorSystem.Utilities
         private DoorSelectionStrategy _selectionStrategy;
         private float _updateAccumulator;
         private WaitForSeconds _updateWait;
+        private bool _duplicateIdWarningLogged;
 
         private void Awake()
         {
@@ -57,7 +58,7 @@ namespace AutomaticDoorSystem.Utilities
 
             Instance = this;
 
-            if (DoorDataBridge.Instance == null)
+            if (DoorDataBridge.Instance == null && GetComponent<DoorDataBridge>() == null)
             {
                 gameObject.AddComponent<DoorDataBridge>();
             }
@@ -72,7 +73,7 @@ namespace AutomaticDoorSystem.Utilities
                 Instance = null;
             }
 
-            if (_selectionStrategy.GetCandidateCount() >= 0)
+            if (_selectionStrategy.IsCreated)
             {
                 _selectionStrategy.Dispose();
             }
@@ -205,6 +206,17 @@ namespace AutomaticDoorSystem.Utilities
 
             _selectionStrategy.FilterByDistance(cullingDistance);
             _selectionStrategy.SortByDistance();
+
+            int duplicateIds = _selectionStrategy.RemoveDuplicateIds();
+            if (duplicateIds > 0 && !_duplicateIdWarningLogged)
+            {
+                _duplicateIdWarningLogged = true;
+                Debug.LogError(
+                    $"[BoxColliderPoolManager] {duplicateIds} door(s) in range share a Door Id with another door. " +
+                    "Pool slots are keyed by Door Id, so the duplicates are ignored and those doors get no collider. " +
+                    "Run Tools > AutomaticDoorSystem > Setup Validator to find and renumber them.", this);
+            }
+
             _selectionStrategy.RemoveSpatialDuplicates(minimumSpacing);
 
             int assignedCount = _selectionStrategy.AssignPoolSlots(

@@ -1,0 +1,28 @@
+{
+    "name": "AutomaticDoorSystem.Editor",
+    "rootNamespace": "AutomaticDoorSystem.Editor",
+    "references": [
+        "AutomaticDoorSystem",
+        "Unity.Entities",
+        "Unity.Entities.Hybrid",
+        "Unity.Collections",
+        "Unity.Mathematics",
+        "Unity.Transforms",
+        "Unity.Scenes",
+        "Unity.Scenes.Editor",
+        "jeanf.scenemanagement",
+        "jeanf.propertyDrawer",
+        "SteamAudioUnity"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -14,12 +14,75 @@ namespace AutomaticDoorSystem
 
         private void OnDrawGizmosSelected()
         {
-            Gizmos.color = new Color(0f, 1f, 0f, 0.3f);
-            Gizmos.matrix = transform.localToWorldMatrix;
-            Gizmos.DrawCube(volumeCenter, volumeSize);
-
-            Gizmos.color = Color.green;
+            DrawVolumeGizmos(transform, volumeCenter, volumeSize, true);
         }
+
+        /// <summary>
+        /// Draws the trigger volume plus the three points that matter when placing a door:
+        /// the centre (where the pooled AudioSource is parked) and the bottom/top centre of the
+        /// volume, which show how far the detection box reaches below and above the doorway.
+        /// Shared with <see cref="DoorAuthoring"/> so the markers also show when the door root is selected.
+        /// </summary>
+        public static void DrawVolumeGizmos(Transform volumeTransform, Vector3 localCenter, Vector3 size, bool drawLabels)
+        {
+            if (volumeTransform == null) return;
+
+            var previousMatrix = Gizmos.matrix;
+            Gizmos.matrix = volumeTransform.localToWorldMatrix;
+
+            Gizmos.color = new Color(0f, 1f, 0f, 0.15f);
+            Gizmos.DrawCube(localCenter, size);
+            Gizmos.color = new Color(0f, 1f, 0f, 0.9f);
+            Gizmos.DrawWireCube(localCenter, size);
+
+            Gizmos.matrix = previousMatrix;
+
+            var halfHeight = new Vector3(0f, size.y * 0.5f, 0f);
+            var worldCenter = volumeTransform.TransformPoint(localCenter);
+            var worldBottom = volumeTransform.TransformPoint(localCenter - halfHeight);
+            var worldTop = volumeTransform.TransformPoint(localCenter + halfHeight);
+
+            // Scale the markers with the volume so they stay readable on both small and large doors.
+            float markerRadius = Mathf.Clamp(Mathf.Min(size.x, size.z) * 0.06f, 0.03f, 0.25f);
+
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(worldCenter, markerRadius);
+            Gizmos.DrawLine(worldBottom, worldTop);
+
+            Gizmos.color = new Color(1f, 0.5f, 0f); // orange - bottom
+            Gizmos.DrawSphere(worldBottom, markerRadius);
+
+            Gizmos.color = Color.cyan; // top
+            Gizmos.DrawSphere(worldTop, markerRadius);
+
+#if UNITY_EDITOR
+            if (!drawLabels) return;
+
+            UnityEditor.Handles.Label(worldTop + Vector3.up * markerRadius * 2f,
+                $"Top center\n{worldTop.y:F2}m",
+                LabelStyle(Color.cyan));
+
+            UnityEditor.Handles.Label(worldBottom - Vector3.up * markerRadius * 2f,
+                $"Bottom center\n{worldBottom.y:F2}m",
+                LabelStyle(new Color(1f, 0.6f, 0.2f)));
+
+            UnityEditor.Handles.Label(worldCenter + Vector3.right * markerRadius * 2f,
+                $"Audio anchor\nheight {(worldTop.y - worldBottom.y):F2}m",
+                LabelStyle(Color.yellow));
+#endif
+        }
+
+#if UNITY_EDITOR
+        private static GUIStyle LabelStyle(Color color)
+        {
+            return new GUIStyle
+            {
+                normal = new GUIStyleState { textColor = color },
+                fontSize = 10,
+                alignment = TextAnchor.MiddleLeft
+            };
+        }
+#endif
 
         class Baker : Baker<DoorTriggerVolumeAuthoring>
         {

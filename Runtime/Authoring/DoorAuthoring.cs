@@ -1,10 +1,11 @@
+using jeanf.validationTools;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
 
 namespace AutomaticDoorSystem
 {
-    public class DoorAuthoring : MonoBehaviour
+    public class DoorAuthoring : MonoBehaviour, IValidatable
     {
         [Header("Per-Instance Settings")]
         [Tooltip("REQUIRED: Unique identifier for this specific door instance (used for lock/unlock events)")]
@@ -26,8 +27,47 @@ namespace AutomaticDoorSystem
         [Tooltip("Enable debug visualization in scene view for this specific door instance")]
         public bool enableDebug = false;
         
+        [Validation("A DoorConfig is required — baking SKIPS this door entirely without one.")]
         [Tooltip("REQUIRED: Reference to the shared DoorConfig asset that defines this door's behavior")]
         public DoorConfig doorConfig;
+
+        [Tooltip("Audio settings for this door (open/close/lock clips + spatialization). " +
+                 "Baked into the entity, so the pooled AudioSources pick it up without a companion object in the main scene. " +
+                 "Leave empty for a silent door.")]
+        public DoorAudioConfiguration doorAudioConfig;
+
+        /// <summary>
+        /// Panel wiring must match the assigned config: a Double config needs BOTH panels, a Single
+        /// config needs the door mesh — otherwise nothing animates. Surfaced through the propertyDrawer
+        /// validation framework (inspector banner, hierarchy highlight, play-mode console scan).
+        /// A null config returns true here because the [Validation] field above already flags it.
+        /// Cross-scene rules (duplicate ids, managers present, subscene placement) stay in the
+        /// DoorSetupValidatorWindow — a single component cannot see them.
+        /// </summary>
+        public bool IsValid
+        {
+            get
+            {
+                if (doorConfig == null) return true;
+                return doorConfig.doorCount == DoorConfig.DoorCountEnum.Double
+                    ? leftDoorMesh != null && rightDoorMesh != null
+                    : doorMesh != null;
+            }
+        }
+
+        /// <summary>
+        /// World position the pooled AudioSource is placed at: the centre of the trigger volume,
+        /// which sits in the doorway rather than at the door's pivot (usually a hinge edge).
+        /// Falls back to the door root when no trigger volume is assigned.
+        /// </summary>
+        public Vector3 GetAudioAnchorPosition()
+        {
+            if (triggerVolumeObject == null) return transform.position;
+
+            var volumeAuthoring = triggerVolumeObject.GetComponent<DoorTriggerVolumeAuthoring>();
+            var localCenter = volumeAuthoring != null ? volumeAuthoring.volumeCenter : Vector3.zero;
+            return triggerVolumeObject.TransformPoint(localCenter);
+        }
 
         private void OnDrawGizmosSelected()
         {
@@ -62,10 +102,25 @@ namespace AutomaticDoorSystem
                 DrawSlidingDoorGizmos(isDouble);
             }
 
+            DrawTriggerVolumeGizmos();
+
             if (enableDebug)
             {
                 DrawDebugInfo();
             }
+        }
+
+        private void DrawTriggerVolumeGizmos()
+        {
+            if (triggerVolumeObject == null) return;
+
+            var volumeAuthoring = triggerVolumeObject.GetComponent<DoorTriggerVolumeAuthoring>();
+            if (volumeAuthoring == null) return;
+
+            DoorTriggerVolumeAuthoring.DrawVolumeGizmos(
+                triggerVolumeObject, volumeAuthoring.volumeCenter, volumeAuthoring.volumeSize, true);
+
+            Gizmos.matrix = Matrix4x4.identity;
         }
 
         private void DrawDebugInfo()
@@ -478,6 +533,18 @@ namespace AutomaticDoorSystem
                     Size = triggerSize,
                     Center = localCenterRelativeToRoot,
                     LayerMask = layerMask
+                });
+
+                // Baked even when null: the runtime bridge then knows this door is deliberately silent
+                // instead of assuming the config just has not loaded yet.
+                if (authoring.doorAudioConfig != null)
+                {
+                    DependsOn(authoring.doorAudioConfig);
+                }
+
+                AddComponent(entity, new DoorAudioConfigReference
+                {
+                    Config = authoring.doorAudioConfig
                 });
 
                 var transformData = CalculateTransformData(authoring, config);

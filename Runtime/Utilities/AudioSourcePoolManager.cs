@@ -1,12 +1,19 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+using AutomaticDoorSystem.Utilities;
 using SteamAudio;
+using Unity.Collections;
+using Unity.Mathematics;
+using UnityEngine;
 using Vector3 = UnityEngine.Vector3;
 
 namespace AutomaticDoorSystem
 {
+    /// <summary>
+    /// Keeps a small pool of AudioSources parked on the doors nearest the player.
+    /// Doors, their positions and their <see cref="DoorAudioConfiguration"/> all come from
+    /// <see cref="DoorDataBridge"/> (i.e. straight off the baked entities), so no per-door
+    /// companion object is needed in the main scene.
+    /// </summary>
     [DefaultExecutionOrder(-50)]
     public class AudioSourcePoolManager : MonoBehaviour
     {
@@ -15,7 +22,7 @@ namespace AutomaticDoorSystem
         #region Configuration
 
         [Header("Prefab Configuration")]
-        [Tooltip("Prefab to spawn for each pooled AudioSource (must have AudioSource and DoorAudioSourceIdentifier components).\n" +
+        [Tooltip("Prefab to spawn for each pooled AudioSource (must have an AudioSource, optionally a SteamAudioSource).\n" +
             "If null, a basic AudioSource GameObject will be created.")]
         public GameObject audioSourcePrefab;
 
@@ -31,11 +38,11 @@ namespace AutomaticDoorSystem
         [Tooltip("Frequency of distance checks in seconds (default: 0.5s)")]
         [Range(0.1f, 2f)]
         public float distanceCheckInterval = 0.5f;
-        
+
         [Tooltip("Minimum distance between AudioSources to prevent overlap (meters)")]
         [Range(0f, 5f)]
         public float minimumSourceSpacing = 0.5f;
-        
+
         [Tooltip("How much closer a new door must be to steal an AudioSource from an assigned door (multiplier). Higher = more stable assignments.")]
         [Range(0.5f, 2f)]
         public float reassignmentThreshold = 1.3f;
@@ -51,29 +58,19 @@ namespace AutomaticDoorSystem
         #endregion
 
         #region Private Fields
+
         private Transform _cameraTransform;
-        private UnityEngine.Vector3 _playerPosition;
-        private List<DoorIdentifier> _currentDoorList;
         private AudioSource[] _audioSourcePool;
         private Transform _poolContainer;
-        private DoorDistanceInfo[] _doorDistances;
-        private int _doorDistanceCount;
         private PooledAudioSourceState[] _poolStates;
-        private DoorDistanceComparer _distanceComparer;
+        private DoorSelectionStrategy _selectionStrategy;
         private Coroutine _distanceCheckCoroutine;
         private WaitForSeconds _distanceCheckWait;
+        private bool _duplicateIdWarningLogged;
 
         #endregion
 
-        #region Structs and Classes
-
-        private struct DoorDistanceInfo
-        {
-            public int doorNumber;
-            public UnityEngine.Vector3 position;
-            public float sqrDistance;
-            public DoorIdentifier identifier; 
-        }
+        #region Structs
 
         private struct PooledAudioSourceState
         {
@@ -83,14 +80,6 @@ namespace AutomaticDoorSystem
             public float targetVolume;
             public Coroutine fadeCoroutine;
             public bool isPlayingAudio;
-        }
-
-        private class DoorDistanceComparer : IComparer<DoorDistanceInfo>
-        {
-            public int Compare(DoorDistanceInfo a, DoorDistanceInfo b)
-            {
-                return a.sqrDistance.CompareTo(b.sqrDistance);
-            }
         }
 
         #endregion
@@ -107,8 +96,14 @@ namespace AutomaticDoorSystem
 
             Instance = this;
 
+            if (DoorDataBridge.Instance == null && GetComponent<DoorDataBridge>() == null)
+            {
+                gameObject.AddComponent<DoorDataBridge>();
+            }
+
             InitializePool();
-            InitializeDataStructures();
+            _selectionStrategy = new DoorSelectionStrategy(500, maxPoolSize, Allocator.Persistent);
+            _distanceCheckWait = new WaitForSeconds(distanceCheckInterval);
             CacheCameraReference();
         }
 
@@ -118,6 +113,11 @@ namespace AutomaticDoorSystem
             {
                 Instance = null;
             }
+
+            if (_selectionStrategy.IsCreated)
+            {
+                _selectionStrategy.Dispose();
+            }
         }
 
         private void OnEnable()
@@ -125,39 +125,17 @@ namespace AutomaticDoorSystem
             StartDistanceChecks();
         }
 
-        private void LateUpdate()
-        {
-            if (_poolStates == null || _currentDoorList == null) return;
-
-            for (int i = 0; i < _poolStates.Length; i++)
-            {
-                var state = _poolStates[i];
-                if (state.assignedDoorNumber == -1 || state.audioSource == null) continue;
-
-                for (int j = 0; j < _currentDoorList.Count; j++)
-                {
-                    var identifier = _currentDoorList[j];
-                    if (identifier != null && identifier.doorNumber == state.assignedDoorNumber)
-                    {
-                        state.audioSource.transform.position = identifier.transform.position;
-                        break;
-                    }
-                }
-            }
-        }
-
         private void OnDisable()
         {
             StopDistanceChecks();
 
-            if (_poolStates != null)
+            if (_poolStates == null) return;
+
+            for (int i = 0; i < _poolStates.Length; i++)
             {
-                for (int i = 0; i < _poolStates.Length; i++)
+                if (_poolStates[i].fadeCoroutine != null)
                 {
-                    if (_poolStates[i].fadeCoroutine != null)
-                    {
-                        StopCoroutine(_poolStates[i].fadeCoroutine);
-                    }
+                    StopCoroutine(_poolStates[i].fadeCoroutine);
                 }
             }
         }
@@ -210,12 +188,10 @@ namespace AutomaticDoorSystem
 
                 _audioSourcePool[i] = audioSource;
 
-                var steamAudioSource = audioSourceObj.GetComponent<SteamAudioSource>();
-
                 _poolStates[i] = new PooledAudioSourceState
                 {
                     audioSource = audioSource,
-                    steamAudioSource = steamAudioSource,
+                    steamAudioSource = audioSourceObj.GetComponent<SteamAudioSource>(),
                     assignedDoorNumber = -1,
                     targetVolume = 1f,
                     fadeCoroutine = null,
@@ -236,45 +212,7 @@ namespace AutomaticDoorSystem
             audioSource.rolloffMode = AudioRolloffMode.Linear;
         }
 
-        private void InitializeDataStructures()
-        {
-            _currentDoorList = new List<DoorIdentifier>(500);
-            _doorDistances = new DoorDistanceInfo[500];
-            _doorDistanceCount = 0;
-            _distanceComparer = new DoorDistanceComparer();
-            _distanceCheckWait = new WaitForSeconds(distanceCheckInterval);
-        }
-
-        private void Start()
-        {
-            FindAndRegisterMissingDoors();
-        }
-
-        private void FindAndRegisterMissingDoors()
-        {
-            var allDoorIdentifiers = FindObjectsByType<DoorIdentifier>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            foreach (var identifier in allDoorIdentifiers)
-            {
-                if (!_currentDoorList.Contains(identifier))
-                {
-                    RegisterDoor(identifier);
-                }
-            }
-        }
-
         private void CacheCameraReference()
-        {
-            if (Camera.main != null)
-            {
-                _cameraTransform = Camera.main.transform;
-            }
-            else
-            {
-                Invoke(nameof(RetryCameraReference), 1f);
-            }
-        }
-
-        private void RetryCameraReference()
         {
             if (Camera.main != null)
             {
@@ -285,6 +223,7 @@ namespace AutomaticDoorSystem
         #endregion
 
         #region Distance-Based Activation
+
         private void StartDistanceChecks()
         {
             if (_distanceCheckCoroutine != null)
@@ -305,6 +244,7 @@ namespace AutomaticDoorSystem
                 _distanceCheckCoroutine = null;
             }
         }
+
         private IEnumerator DistanceCheckRoutine()
         {
             while (true)
@@ -318,92 +258,96 @@ namespace AutomaticDoorSystem
         {
             if (_cameraTransform == null)
             {
-                return;
+                CacheCameraReference();
+                if (_cameraTransform == null) return;
             }
 
-            if (_currentDoorList == null || _currentDoorList.Count == 0)
+            var bridge = DoorDataBridge.Instance;
+            if (bridge == null || !_selectionStrategy.IsCreated) return;
+
+            var allDoors = bridge.GetAllDoorInfo();
+            if (allDoors == null || allDoors.Count == 0) return;
+
+            float3 playerPosition = _cameraTransform.position;
+
+            _selectionStrategy.BeginSelection();
+
+            for (int i = 0; i < allDoors.Count; i++)
             {
-                return;
+                var doorInfo = allDoors[i];
+
+                // A door with no audio config has nothing to play - don't let it hold a slot.
+                if (doorInfo.audioConfig == null) continue;
+
+                _selectionStrategy.AddCandidate(doorInfo.doorId, doorInfo.audioPosition, playerPosition);
             }
 
-            _playerPosition = _cameraTransform.position;
+            _selectionStrategy.FilterByDistance(cullingDistance);
+            _selectionStrategy.SortByDistance();
 
-            float sqrCullingDistance = cullingDistance * cullingDistance;
-
-            _doorDistanceCount = 0;
-
-            for (int i = 0; i < _currentDoorList.Count; i++)
+            int duplicateIds = _selectionStrategy.RemoveDuplicateIds();
+            if (duplicateIds > 0 && !_duplicateIdWarningLogged)
             {
-                DoorIdentifier identifier = _currentDoorList[i];
-                if (identifier == null) continue;
+                _duplicateIdWarningLogged = true;
+                Debug.LogError(
+                    $"[AudioSourcePoolManager] {duplicateIds} door(s) in range share a Door Id with another door. " +
+                    "AudioSources are assigned per Door Id, so the duplicates stay silent. " +
+                    "Run Tools > AutomaticDoorSystem > Setup Validator to find and renumber them.", this);
+            }
 
-                Vector3 doorPosition = identifier.transform.position;
-                float sqrDist = (doorPosition - _playerPosition).sqrMagnitude;
+            _selectionStrategy.RemoveSpatialDuplicates(minimumSourceSpacing);
 
-                if (sqrDist <= sqrCullingDistance)
+            // A source that is mid-clip must not be stolen out from under the sound it is playing.
+            for (int i = 0; i < maxPoolSize; i++)
+            {
+                var state = _poolStates[i];
+                _selectionStrategy.SetSlotLocked(i,
+                    state.isPlayingAudio && state.audioSource != null && state.audioSource.isPlaying);
+            }
+
+            _selectionStrategy.AssignPoolSlots(maxPoolSize, keepOutOfRangeAssignments, reassignmentThreshold);
+
+            for (int i = 0; i < maxPoolSize; i++)
+            {
+                int doorId = _selectionStrategy.GetDoorIdForSlot(i);
+
+                if (doorId == -1)
                 {
-                    _doorDistances[_doorDistanceCount] = new DoorDistanceInfo
-                    {
-                        doorNumber = identifier.doorNumber,
-                        position = doorPosition,
-                        sqrDistance = sqrDist,
-                        identifier = identifier
-                    };
-
-                    _doorDistanceCount++;
-
-                    if (_doorDistanceCount >= _doorDistances.Length)
-                    {
-                        break;
-                    }
+                    DeactivateAudioSource(i);
+                    continue;
                 }
-            }
 
-            if (_doorDistanceCount > 0)
-            {
-                Array.Sort(_doorDistances, 0, _doorDistanceCount, _distanceComparer);
-            }
-
-            _doorDistanceCount = RemoveDuplicatePositions(_doorDistances, _doorDistanceCount);
-
-            int doorsToActivate = Mathf.Min(_doorDistanceCount, maxPoolSize);
-
-            AssignAudioSourcesWithHysteresis(doorsToActivate);
-
-            if (!keepOutOfRangeAssignments)
-            {
-                for (int i = doorsToActivate; i < maxPoolSize; i++)
+                if (bridge.TryGetDoorInfo(doorId, out var doorInfo) && doorInfo.audioConfig != null)
                 {
+                    ActivateAudioSourceForDoor(i, doorInfo);
+                }
+                else
+                {
+                    // The door went away (subscene unloaded) - release the slot.
+                    _selectionStrategy.UnassignSlot(i);
                     DeactivateAudioSource(i);
                 }
             }
-            else
-            {
-                DeactivateUnusedSlotsOnly();
-            }
         }
 
-        private void ActivateAudioSourceForDoor(int poolIndex, DoorDistanceInfo doorInfo)
+        private void ActivateAudioSourceForDoor(int poolIndex, DoorDataBridge.DoorInfo doorInfo)
         {
             PooledAudioSourceState state = _poolStates[poolIndex];
+            if (state.audioSource == null) return;
 
             if (state.isPlayingAudio && state.audioSource.isPlaying)
             {
-                state.audioSource.transform.position = doorInfo.position;
+                state.audioSource.transform.position = doorInfo.audioPosition;
                 return;
             }
 
-            if (state.assignedDoorNumber == doorInfo.doorNumber)
+            if (state.assignedDoorNumber == doorInfo.doorId)
             {
-                state.audioSource.transform.position = doorInfo.position;
+                state.audioSource.transform.position = doorInfo.audioPosition;
 
-                if (DoorAudioBridge.Instance != null && doorInfo.identifier != null)
+                if (DoorAudioBridge.Instance != null)
                 {
-                    var lateConfig = doorInfo.identifier.GetAudioConfiguration();
-                    if (lateConfig != null)
-                    {
-                        DoorAudioBridge.Instance.RegisterAudioSource(doorInfo.doorNumber, state.audioSource, lateConfig);
-                    }
+                    DoorAudioBridge.Instance.RegisterAudioSource(doorInfo.doorId, state.audioSource, doorInfo.audioConfig);
                 }
 
                 return;
@@ -414,35 +358,22 @@ namespace AutomaticDoorSystem
                 DoorAudioBridge.Instance.UnregisterAudioSource(state.assignedDoorNumber, state.audioSource);
             }
 
-            DoorAudioConfiguration config = null;
-            if (doorInfo.identifier != null)
+            var config = doorInfo.audioConfig;
+            state.targetVolume = config.volume;
+            config.ApplyToAudioSource(state.audioSource);
+            if (state.steamAudioSource != null)
             {
-                config = doorInfo.identifier.GetAudioConfiguration();
+                config.ApplyToSteamAudioSource(state.steamAudioSource);
             }
 
-            if (config != null)
-            {
-                state.targetVolume = config.volume;
-                config.ApplyToAudioSource(state.audioSource);
-                if (state.steamAudioSource != null)
-                {
-                    config.ApplyToSteamAudioSource(state.steamAudioSource);
-                }
-            }
-            else
-            {
-                state.targetVolume = 1f;
-            }
-
-            state.audioSource.transform.position = doorInfo.position;
+            state.audioSource.transform.position = doorInfo.audioPosition;
 
             if (state.fadeCoroutine != null)
             {
                 StopCoroutine(state.fadeCoroutine);
             }
 
-            bool wasMuted = state.audioSource.mute;
-            if (wasMuted || state.audioSource.volume < 0.01f)
+            if (state.audioSource.mute || state.audioSource.volume < 0.01f)
             {
                 state.audioSource.mute = false;
                 state.audioSource.volume = 0f;
@@ -454,12 +385,12 @@ namespace AutomaticDoorSystem
                 state.audioSource.volume = state.targetVolume;
             }
 
-            if (DoorAudioBridge.Instance != null && config != null)
+            if (DoorAudioBridge.Instance != null)
             {
-                DoorAudioBridge.Instance.RegisterAudioSource(doorInfo.doorNumber, state.audioSource, config);
+                DoorAudioBridge.Instance.RegisterAudioSource(doorInfo.doorId, state.audioSource, config);
             }
 
-            state.assignedDoorNumber = doorInfo.doorNumber;
+            state.assignedDoorNumber = doorInfo.doorId;
             _poolStates[poolIndex] = state;
         }
 
@@ -467,7 +398,7 @@ namespace AutomaticDoorSystem
         {
             PooledAudioSourceState state = _poolStates[poolIndex];
 
-            if (state.assignedDoorNumber == -1)
+            if (state.assignedDoorNumber == -1 || state.audioSource == null)
             {
                 return;
             }
@@ -487,17 +418,6 @@ namespace AutomaticDoorSystem
             _poolStates[poolIndex] = state;
         }
 
-        private void DeactivateUnusedSlotsOnly()
-        {
-            for (int i = 0; i < maxPoolSize; i++)
-            {
-                if (_poolStates[i].assignedDoorNumber == -1)
-                {
-                    DeactivateAudioSource(i);
-                }
-            }
-        }
-
         private IEnumerator FadeVolume(int poolIndex, float targetVolume, float duration)
         {
             PooledAudioSourceState state = _poolStates[poolIndex];
@@ -515,6 +435,8 @@ namespace AutomaticDoorSystem
             }
 
             state.audioSource.volume = targetVolume;
+
+            state = _poolStates[poolIndex];
             state.fadeCoroutine = null;
             _poolStates[poolIndex] = state;
         }
@@ -538,181 +460,19 @@ namespace AutomaticDoorSystem
 
             state.audioSource.volume = 0f;
             state.audioSource.mute = true;
-            state.fadeCoroutine = null;
 
             if (previousDoorNumber != -1 && DoorAudioBridge.Instance != null)
             {
                 DoorAudioBridge.Instance.UnregisterAudioSource(previousDoorNumber, state.audioSource);
             }
 
+            state = _poolStates[poolIndex];
+            state.fadeCoroutine = null;
             state.assignedDoorNumber = -1;
             _poolStates[poolIndex] = state;
         }
 
-        private int RemoveDuplicatePositions(DoorDistanceInfo[] distances, int count)
-        {
-            if (count <= 1) return count;
-
-            int writeIndex = 0;
-            float sqrMinSpacing = minimumSourceSpacing * minimumSourceSpacing;
-
-            for (int i = 0; i < count; i++)
-            {
-                bool isDuplicate = false;
-
-                for (int j = 0; j < writeIndex; j++)
-                {
-                    float sqrDist = (distances[i].position - distances[j].position).sqrMagnitude;
-                    if (sqrDist < sqrMinSpacing)
-                    {
-                        isDuplicate = true;
-                        break;
-                    }
-                }
-
-                if (!isDuplicate)
-                {
-                    if (writeIndex != i)
-                    {
-                        distances[writeIndex] = distances[i];
-                    }
-                    writeIndex++;
-                }
-            }
-
-            return writeIndex;
-        }
-
-        private void AssignAudioSourcesWithHysteresis(int doorsToActivate)
-        {
-            var currentAssignments = new System.Collections.Generic.Dictionary<int, int>();
-            var inRangeDoors = new System.Collections.Generic.HashSet<int>();
-
-            for (int i = 0; i < maxPoolSize; i++)
-            {
-                if (_poolStates[i].assignedDoorNumber != -1)
-                {
-                    currentAssignments[_poolStates[i].assignedDoorNumber] = i;
-                }
-            }
-
-            for (int i = 0; i < doorsToActivate; i++)
-            {
-                inRangeDoors.Add(_doorDistances[i].doorNumber);
-            }
-
-            bool[] poolSlotUsed = new bool[maxPoolSize];
-
-            for (int i = 0; i < doorsToActivate; i++)
-            {
-                DoorDistanceInfo doorInfo = _doorDistances[i];
-
-                if (currentAssignments.TryGetValue(doorInfo.doorNumber, out int existingPoolIndex))
-                {
-                    ActivateAudioSourceForDoor(existingPoolIndex, doorInfo);
-                    poolSlotUsed[existingPoolIndex] = true;
-                }
-            }
-
-            if (keepOutOfRangeAssignments)
-            {
-                for (int i = 0; i < maxPoolSize; i++)
-                {
-                    int assignedDoorNumber = _poolStates[i].assignedDoorNumber;
-                    if (assignedDoorNumber != -1 && !poolSlotUsed[i] && !inRangeDoors.Contains(assignedDoorNumber))
-                    {
-                        poolSlotUsed[i] = true;
-                    }
-                }
-            }
-
-            int nextFreeSlot = 0;
-            for (int i = 0; i < doorsToActivate; i++)
-            {
-                DoorDistanceInfo doorInfo = _doorDistances[i];
-
-                if (currentAssignments.ContainsKey(doorInfo.doorNumber))
-                {
-                    continue;
-                }
-
-                while (nextFreeSlot < maxPoolSize && _poolStates[nextFreeSlot].assignedDoorNumber != -1)
-                {
-                    nextFreeSlot++;
-                }
-
-                if (nextFreeSlot < maxPoolSize)
-                {
-                    ActivateAudioSourceForDoor(nextFreeSlot, doorInfo);
-                    poolSlotUsed[nextFreeSlot] = true;
-                    nextFreeSlot++;
-                }
-                else
-                {
-                    int victimSlot = FindSlotToReassign(doorInfo, inRangeDoors);
-                    if (victimSlot != -1)
-                    {
-                        ActivateAudioSourceForDoor(victimSlot, doorInfo);
-                        poolSlotUsed[victimSlot] = true;
-                    }
-                }
-            }
-        }
-
-        private int FindSlotToReassign(DoorDistanceInfo newDoor, System.Collections.Generic.HashSet<int> inRangeDoors)
-        {
-            int outOfRangeSlot = -1;
-            int bestInRangeSlot = -1;
-            float bestRatio = reassignmentThreshold;
-
-            for (int i = 0; i < maxPoolSize; i++)
-            {
-                var state = _poolStates[i];
-                if (state.assignedDoorNumber == -1) continue;
-
-                if (state.isPlayingAudio && state.audioSource.isPlaying) continue;
-
-                bool isInRange = inRangeDoors.Contains(state.assignedDoorNumber);
-
-                if (!isInRange)
-                {
-                    if (outOfRangeSlot == -1)
-                    {
-                        outOfRangeSlot = i;
-                    }
-                }
-                else
-                {
-                    float currentDoorSqrDist = float.MaxValue;
-                    for (int j = 0; j < _doorDistanceCount; j++)
-                    {
-                        if (_doorDistances[j].doorNumber == state.assignedDoorNumber)
-                        {
-                            currentDoorSqrDist = _doorDistances[j].sqrDistance;
-                            break;
-                        }
-                    }
-
-                    float distanceRatio = currentDoorSqrDist / newDoor.sqrDistance;
-
-                    if (distanceRatio > bestRatio)
-                    {
-                        bestRatio = distanceRatio;
-                        bestInRangeSlot = i;
-                    }
-                }
-            }
-
-            if (outOfRangeSlot != -1)
-            {
-                return outOfRangeSlot;
-            }
-
-            return bestInRangeSlot;
-        }
-
         #endregion
-
 
         #region Public API
 
@@ -720,18 +480,17 @@ namespace AutomaticDoorSystem
         {
             if (_poolStates == null) return;
 
-            // Find the pool index for this AudioSource
             for (int i = 0; i < _poolStates.Length; i++)
             {
-                if (_poolStates[i].audioSource == audioSource && _poolStates[i].assignedDoorNumber == doorNumber)
-                {
-                    var state = _poolStates[i];
-                    state.isPlayingAudio = true;
-                    _poolStates[i] = state;
+                if (_poolStates[i].audioSource != audioSource || _poolStates[i].assignedDoorNumber != doorNumber)
+                    continue;
 
-                    StartCoroutine(ClearPlaybackFlag(i, clipLength));
-                    break;
-                }
+                var state = _poolStates[i];
+                state.isPlayingAudio = true;
+                _poolStates[i] = state;
+
+                StartCoroutine(ClearPlaybackFlag(i, clipLength));
+                break;
             }
         }
 
@@ -745,31 +504,6 @@ namespace AutomaticDoorSystem
                 state.isPlayingAudio = false;
                 _poolStates[poolIndex] = state;
             }
-        }
-
-        public void RegisterDoor(DoorIdentifier doorIdentifier)
-        {
-            if (doorIdentifier == null || _currentDoorList == null)
-            {
-                return;
-            }
-
-            if (_currentDoorList.Contains(doorIdentifier))
-            {
-                return;
-            }
-
-            _currentDoorList.Add(doorIdentifier);
-        }
-
-        public void UnregisterDoor(DoorIdentifier doorIdentifier)
-        {
-            if (doorIdentifier == null || _currentDoorList == null)
-            {
-                return;
-            }
-
-            _currentDoorList.Remove(doorIdentifier);
         }
 
         [ContextMenu("Force Update Audio Sources")]
@@ -791,11 +525,6 @@ namespace AutomaticDoorSystem
             return count;
         }
 
-        public int GetRegisteredDoorCount()
-        {
-            return _currentDoorList?.Count ?? 0;
-        }
-
         #endregion
 
         #region Debug
@@ -807,15 +536,14 @@ namespace AutomaticDoorSystem
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(_cameraTransform.position, cullingDistance);
 
-            if (_poolStates != null)
+            if (_poolStates == null) return;
+
+            Gizmos.color = Color.green;
+            for (int i = 0; i < maxPoolSize; i++)
             {
-                Gizmos.color = Color.green;
-                for (int i = 0; i < maxPoolSize; i++)
+                if (_poolStates[i].assignedDoorNumber != -1 && _poolStates[i].audioSource != null)
                 {
-                    if (_poolStates[i].assignedDoorNumber != -1 && _poolStates[i].audioSource != null)
-                    {
-                        Gizmos.DrawWireSphere(_poolStates[i].audioSource.transform.position, 1f);
-                    }
+                    Gizmos.DrawWireSphere(_poolStates[i].audioSource.transform.position, 1f);
                 }
             }
         }

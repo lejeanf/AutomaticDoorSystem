@@ -213,7 +213,8 @@ MonoBehaviour:
   rightDoorMesh: {fileID: 0}
   triggerVolumeObject: {fileID: 1311938482323541595}
   enableDebug: 0
-  doorConfig: {fileID: 11400000, guid: a86be492ab3871b46901d646d4b08b20, type: 2}
+  doorConfig: {fileID: 11400000, guid: 9650a3b2a93c58148b2522d2604dbb46, type: 2}
+  doorAudioConfig: {fileID: 11400000, guid: e56d7082c665b9847bc0d3633f7e9158, type: 2}
 --- !u!1 &9018277878422249915
 GameObject:
   m_ObjectHideFlags: 0

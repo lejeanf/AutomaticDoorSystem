@@ -53,6 +53,7 @@ MonoBehaviour:
   triggerVolumeObject: {fileID: 6607673918005409354}
   enableDebug: 0
   doorConfig: {fileID: 11400000, guid: a86be492ab3871b46901d646d4b08b20, type: 2}
+  doorAudioConfig: {fileID: 11400000, guid: 1ccf0bfa69cf2e34a8edff36ac98e577, type: 2}
 --- !u!1 &6336704448369054907
 GameObject:
   m_ObjectHideFlags: 0

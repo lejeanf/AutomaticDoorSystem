@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using jeanf.validationTools;
 using UnityEditor;
 using UnityEngine;
 #endif
@@ -11,6 +12,7 @@ namespace AutomaticDoorSystem.Editor
     {
         
         private SerializedProperty doorConfigProp;
+        private SerializedProperty doorAudioConfigProp;
         private SerializedProperty doorMeshProp;
         private SerializedProperty leftDoorMeshProp;
         private SerializedProperty rightDoorMeshProp;
@@ -23,6 +25,7 @@ namespace AutomaticDoorSystem.Editor
         private void OnEnable()
         {
             doorConfigProp = serializedObject.FindProperty("doorConfig");
+            doorAudioConfigProp = serializedObject.FindProperty("doorAudioConfig");
             doorMeshProp = serializedObject.FindProperty("doorMesh");
             leftDoorMeshProp = serializedObject.FindProperty("leftDoorMesh");
             rightDoorMeshProp = serializedObject.FindProperty("rightDoorMesh");
@@ -53,6 +56,10 @@ namespace AutomaticDoorSystem.Editor
             serializedObject.Update();
             UpdateDoorConfigSerializedObject();
 
+            // This CustomEditor replaces ValidationInspectorBanner, so draw the banner ourselves:
+            // missing [Validation] fields and the IValidatable panel-wiring rule land here.
+            ValidationUi.DrawIssuesBanner(target as Component);
+
             GUI.enabled = false;
             EditorGUILayout.PropertyField(serializedObject.FindProperty("m_Script"));
             GUI.enabled = true;
@@ -64,17 +71,32 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.Space();
 
-            // Show DoorConfig reference first
-            EditorGUILayout.LabelField("Shared Behavior Configuration", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(doorConfigProp, new GUIContent("Door Config"));
+            // Both config assets first: behavior, then audio
+            EditorGUILayout.LabelField("Config", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(doorConfigProp, new GUIContent("Behavior Config"));
+            EditorGUILayout.PropertyField(doorAudioConfigProp, new GUIContent("Audio Config"));
 
+            // ValidationDrawer already washes the Behavior Config field orange and states why
+            // when it is unset — nothing to add here, just stop before the null config below.
             if (doorConfigProp.objectReferenceValue == null)
             {
-                EditorGUILayout.HelpBox(
-                    "REQUIRED: Assign a DoorConfig asset to configure this door's behavior!",
-                    MessageType.Error);
                 serializedObject.ApplyModifiedProperties();
                 return;
+            }
+
+            if (doorAudioConfigProp.objectReferenceValue == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "No audio configuration - this door will be silent. Assign a DoorAudioConfiguration " +
+                    "to give it open/close sounds.",
+                    MessageType.Info);
+            }
+            else if (((DoorAuthoring)target).triggerVolumeObject == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "No Trigger Volume Object assigned - the pooled AudioSource will fall back to the " +
+                    "door root (usually a hinge edge) instead of the middle of the doorway.",
+                    MessageType.Warning);
             }
 
             EditorGUILayout.Space();
