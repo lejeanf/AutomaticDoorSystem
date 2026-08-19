@@ -14,7 +14,11 @@ namespace AutomaticDoorSystem
 
         private void OnDrawGizmosSelected()
         {
-            DrawVolumeGizmos(transform, volumeCenter, volumeSize, true);
+            // The door may override the anchor; if it does, this centre is NOT where the pooled
+            // AudioSource ends up, so it must not present itself as the audio anchor.
+            var door = GetComponentInParent<DoorAuthoring>();
+            DrawVolumeGizmos(transform, volumeCenter, volumeSize, true,
+                door == null || door.audioAnchor == null);
         }
 
         /// <summary>
@@ -23,7 +27,13 @@ namespace AutomaticDoorSystem
         /// volume, which show how far the detection box reaches below and above the doorway.
         /// Shared with <see cref="DoorAuthoring"/> so the markers also show when the door root is selected.
         /// </summary>
-        public static void DrawVolumeGizmos(Transform volumeTransform, Vector3 localCenter, Vector3 size, bool drawLabels)
+        /// <param name="centreIsAudioAnchor">
+        /// False when the door supplies an explicit audioAnchor. The centre marker is then
+        /// suppressed so only one "Audio anchor" gizmo exists in the scene - drawing both, labelled
+        /// identically, made it impossible to tell which one the AudioSource actually used.
+        /// </param>
+        public static void DrawVolumeGizmos(Transform volumeTransform, Vector3 localCenter, Vector3 size,
+            bool drawLabels, bool centreIsAudioAnchor = true)
         {
             if (volumeTransform == null) return;
 
@@ -46,7 +56,7 @@ namespace AutomaticDoorSystem
             float markerRadius = Mathf.Clamp(Mathf.Min(size.x, size.z) * 0.06f, 0.03f, 0.25f);
 
             Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(worldCenter, markerRadius);
+            if (centreIsAudioAnchor) Gizmos.DrawWireSphere(worldCenter, markerRadius);
             Gizmos.DrawLine(worldBottom, worldTop);
 
             Gizmos.color = new Color(1f, 0.5f, 0f); // orange - bottom
@@ -65,6 +75,8 @@ namespace AutomaticDoorSystem
             UnityEditor.Handles.Label(worldBottom - Vector3.up * markerRadius * 2f,
                 $"Bottom center\n{worldBottom.y:F2}m",
                 LabelStyle(new Color(1f, 0.6f, 0.2f)));
+
+            if (!centreIsAudioAnchor) return;
 
             UnityEditor.Handles.Label(worldCenter + Vector3.right * markerRadius * 2f,
                 $"Audio anchor\nheight {(worldTop.y - worldBottom.y):F2}m",

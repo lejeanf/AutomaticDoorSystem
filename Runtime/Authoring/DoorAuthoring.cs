@@ -135,7 +135,8 @@ namespace AutomaticDoorSystem
             if (volumeAuthoring == null) return;
 
             DoorTriggerVolumeAuthoring.DrawVolumeGizmos(
-                triggerVolumeObject, volumeAuthoring.volumeCenter, volumeAuthoring.volumeSize, true);
+                triggerVolumeObject, volumeAuthoring.volumeCenter, volumeAuthoring.volumeSize, true,
+                audioAnchor == null);
 
             Gizmos.matrix = Matrix4x4.identity;
         }
@@ -517,6 +518,13 @@ namespace AutomaticDoorSystem
                     Debug.LogError($"[DoorBaker] Door '{authoring.gameObject.name}' is missing DoorConfig reference! Skipping baking.", authoring.gameObject);
                     return;
                 }
+
+                // Nearly everything below is read off this shared asset - door type, slide offsets,
+                // sliding style, timings, layer mask, start-locked. Without this dependency Unity
+                // never learns the entity is derived from it, so editing a DoorConfig left every
+                // door baked with stale values: the gizmos (live authoring data) moved while the
+                // baked entities did not, and only touching a door GameObject forced a rebake.
+                DependsOn(authoring.doorConfig);
 
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
 
