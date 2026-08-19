@@ -731,23 +731,27 @@ namespace AutomaticDoorSystem.Editor
             string folder = PromptForProjectFolder("Where should the DoorConfig assets go?");
             if (folder == null) return;
 
-            var variants = new (string name, DoorConfig.DoorCountEnum count, DoorConfig.DoorMovementEnum movement)[]
+            // Telescopic is a style of Sliding Double rather than its own movement type, so the set
+            // carries both variants - otherwise the only way to get one is to hand-edit a config.
+            var variants = new (string name, DoorConfig.DoorCountEnum count, DoorConfig.DoorMovementEnum movement, DoorConfig.SlidingStyleEnum slidingStyle)[]
             {
-                ("DoorConfig_SingleRotating", DoorConfig.DoorCountEnum.Single, DoorConfig.DoorMovementEnum.Rotating),
-                ("DoorConfig_DoubleRotating", DoorConfig.DoorCountEnum.Double, DoorConfig.DoorMovementEnum.Rotating),
-                ("DoorConfig_SingleSliding", DoorConfig.DoorCountEnum.Single, DoorConfig.DoorMovementEnum.Sliding),
-                ("DoorConfig_DoubleSliding", DoorConfig.DoorCountEnum.Double, DoorConfig.DoorMovementEnum.Sliding),
+                ("DoorConfig_SingleRotating", DoorConfig.DoorCountEnum.Single, DoorConfig.DoorMovementEnum.Rotating, DoorConfig.SlidingStyleEnum.Mirrored),
+                ("DoorConfig_DoubleRotating", DoorConfig.DoorCountEnum.Double, DoorConfig.DoorMovementEnum.Rotating, DoorConfig.SlidingStyleEnum.Mirrored),
+                ("DoorConfig_SingleSliding", DoorConfig.DoorCountEnum.Single, DoorConfig.DoorMovementEnum.Sliding, DoorConfig.SlidingStyleEnum.Mirrored),
+                ("DoorConfig_DoubleSliding", DoorConfig.DoorCountEnum.Double, DoorConfig.DoorMovementEnum.Sliding, DoorConfig.SlidingStyleEnum.Mirrored),
+                ("DoorConfig_DoubleSlidingTelescopic", DoorConfig.DoorCountEnum.Double, DoorConfig.DoorMovementEnum.Sliding, DoorConfig.SlidingStyleEnum.Telescopic),
             };
 
             var created = new List<string>();
 
-            foreach (var (name, count, movement) in variants)
+            foreach (var (name, count, movement, slidingStyle) in variants)
             {
                 string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{name}.asset");
 
                 var config = CreateInstance<DoorConfig>();
                 config.doorCount = count;
                 config.doorMovement = movement;
+                config.slidingStyle = slidingStyle;
 
                 AssetDatabase.CreateAsset(config, path);
                 created.Add(System.IO.Path.GetFileName(path));
