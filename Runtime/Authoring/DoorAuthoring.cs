@@ -155,7 +155,7 @@ namespace AutomaticDoorSystem
                     UnityEditor.Handles.Label(initialPos + Vector3.up * 0.3f, "Closed Position",
                         new UnityEngine.GUIStyle() { normal = new UnityEngine.GUIStyleState() { textColor = Color.red } });
 
-                    var targetPos = initialPos + doorConfig.slideOpenOffset;
+                    var targetPos = initialPos + SlideVectorToWorld(transform, doorConfig.slideOpenOffset);
                     Gizmos.color = Color.green;
                     Gizmos.DrawWireSphere(targetPos, 0.15f);
                     UnityEditor.Handles.Label(targetPos + Vector3.up * 0.3f, "Open Position",
@@ -169,7 +169,7 @@ namespace AutomaticDoorSystem
                     if (leftDoorMesh != null)
                     {
                         var leftInitialPos = leftDoorMesh.position;
-                        var leftTargetPos = leftInitialPos + doorConfig.slideOpenOffset;
+                        var leftTargetPos = leftInitialPos + SlideVectorToWorld(transform, doorConfig.slideOpenOffset);
 
                         Gizmos.color = Color.red;
                         Gizmos.DrawWireSphere(leftInitialPos, 0.12f);
@@ -182,7 +182,8 @@ namespace AutomaticDoorSystem
                     if (rightDoorMesh != null)
                     {
                         var rightInitialPos = rightDoorMesh.position;
-                        var rightTargetPos = rightInitialPos + new Vector3(-doorConfig.slideOpenOffset.x, doorConfig.slideOpenOffset.y, doorConfig.slideOpenOffset.z);
+                        var rightTargetPos = rightInitialPos +
+                                             SlideVectorToWorld(transform, MirrorForRightPanel(doorConfig.slideOpenOffset));
 
                         Gizmos.color = Color.red;
                         Gizmos.DrawWireSphere(rightInitialPos, 0.12f);
@@ -407,15 +408,33 @@ namespace AutomaticDoorSystem
 #endif
         }
 
+        /// <summary>
+        /// Rotates a door-local slide offset into world space for drawing. Uses TransformVector
+        /// rather than TransformDirection so a scaled door root scales its travel, matching how
+        /// the panels' local positions scale with it.
+        /// </summary>
+        public static Vector3 SlideVectorToWorld(Transform doorRoot, Vector3 localSlideOffset)
+        {
+            return doorRoot == null ? localSlideOffset : doorRoot.TransformVector(localSlideOffset);
+        }
+
+        /// <summary>
+        /// The right panel of a Mirrored double slides the opposite way along the door's own X,
+        /// which is the negation DoorAnimationSystem applies to SlideOffset.x at runtime.
+        /// </summary>
+        public static Vector3 MirrorForRightPanel(Vector3 localSlideOffset)
+        {
+            return new Vector3(-localSlideOffset.x, localSlideOffset.y, localSlideOffset.z);
+        }
+
         private void DrawSlidingDoorGizmos(bool isDouble)
         {
             if (doorConfig == null) return;
 
-            // Transform offset to match what the animation system does:
-            // Baker converts world offset to local, animation applies in local space
-            // For gizmo, we need the world-space result of that local offset
-            Vector3 localOffset = transform.InverseTransformVector(doorConfig.slideOpenOffset);
-            Vector3 worldOffset = transform.TransformVector(localOffset);
+            // The config offsets are door-local, so rotate them into world space to draw them.
+            // This used to be TransformVector(InverseTransformVector(v)) - an exact no-op that
+            // drew the raw world vector and so ignored the door's rotation entirely.
+            Vector3 worldOffset = SlideVectorToWorld(transform, doorConfig.slideOpenOffset);
 
             if (isDouble && doorConfig.slidingStyle == DoorConfig.SlidingStyleEnum.Telescopic)
             {
@@ -435,7 +454,7 @@ namespace AutomaticDoorSystem
                         var catchUp = Mathf.Max(rightSpan - doorConfig.slideOpenOffset.magnitude, 0f);
                         rightOffset = rightSpan > 1e-4f ? rightOffset / rightSpan * catchUp : Vector3.zero;
                     }
-                    DrawSlideArrow(rightDoorMesh.position, rightOffset, Color.cyan);
+                    DrawSlideArrow(rightDoorMesh.position, SlideVectorToWorld(transform, rightOffset), Color.cyan);
                 }
             }
             else if (isDouble)
@@ -447,9 +466,9 @@ namespace AutomaticDoorSystem
                 if (rightDoorMesh != null)
                 {
                     // Right door uses negated X in local space (matches animation system)
-                    Vector3 rightLocalOffset = new Vector3(-localOffset.x, localOffset.y, localOffset.z);
-                    Vector3 rightWorldOffset = transform.TransformVector(rightLocalOffset);
-                    DrawSlideArrow(rightDoorMesh.position, rightWorldOffset, Color.cyan);
+                    DrawSlideArrow(rightDoorMesh.position,
+                        SlideVectorToWorld(transform, MirrorForRightPanel(doorConfig.slideOpenOffset)),
+                        Color.cyan);
                 }
             }
             else
@@ -719,13 +738,17 @@ namespace AutomaticDoorSystem
 
                 if (doorType == DoorType.SlidingSingle || doorType == DoorType.SlidingDouble)
                 {
+                    // Slide offsets are authored in the door root's LOCAL space and the animation
+                    // system applies them to the panels' LocalTransform, so they are stored as-is.
+                    // Converting through world here made a shared DoorConfig useless the moment two
+                    // doors had different rotations: every door slid along the same world axis, so a
+                    // door rotated 90 degrees slid across its doorway instead of along it.
                     var openOffset = config.slideOpenOffset;
-                    var localOffset = authoring.transform.InverseTransformVector(openOffset);
-                    data.SlideOffset = new float3(localOffset.x, localOffset.y, localOffset.z);
+                    data.SlideOffset = new float3(openOffset.x, openOffset.y, openOffset.z);
 
                     data.SlidingStyle = (SlidingStyle)config.slidingStyle;
-                    var rightLocal = authoring.transform.InverseTransformVector(config.rightSlideOpenOffset);
-                    data.RightSlideOffset = new float3(rightLocal.x, rightLocal.y, rightLocal.z);
+                    var rightOffset = config.rightSlideOpenOffset;
+                    data.RightSlideOffset = new float3(rightOffset.x, rightOffset.y, rightOffset.z);
                     data.OpenRightDoorOnly = (byte)(config.openRightDoorOnly ? 1 : 0);
 
                     if (doorType == DoorType.SlidingSingle && authoring.doorMesh != null)
