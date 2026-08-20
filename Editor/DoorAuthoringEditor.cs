@@ -295,8 +295,11 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.BeginHorizontal();
             if (directionMatters)
             {
-                if (GUILayout.Button("Open (Fwd)")) DoorPreviewDriver.PreviewOpen(door, directionForward: true);
-                if (GUILayout.Button("Open (Bwd)")) DoorPreviewDriver.PreviewOpen(door, directionForward: false);
+                // "Front" is the side the DETECTION system treats as DirectionForward = 1 — the
+                // quantized world axis, exactly what a player walking up in game triggers. Testing
+                // both sides here reproduces the roaming behavior, not just the animation.
+                if (GUILayout.Button("Open From Front")) DoorPreviewDriver.PreviewOpen(door, directionForward: true);
+                if (GUILayout.Button("Open From Back")) DoorPreviewDriver.PreviewOpen(door, directionForward: false);
             }
             else
             {
@@ -308,6 +311,14 @@ namespace AutomaticDoorSystem.Editor
             if (GUILayout.Button("Reset")) DoorPreviewDriver.EndPreview();
             GUI.enabled = true;
             EditorGUILayout.EndHorizontal();
+
+            if (directionMatters)
+            {
+                var front = DoorPivotAnalysis.QuantizedFrontAxis(door.transform);
+                EditorGUILayout.LabelField(
+                    $"Front = {DoorPivotAnalysis.AxisLabel(front)} (the side the detection system reads as forward)",
+                    EditorStyles.miniLabel);
+            }
 
             if (DoorPreviewDriver.IsPreviewing(door))
             {

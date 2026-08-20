@@ -29,6 +29,12 @@ namespace AutomaticDoorSystem.Editor
             var isDouble = config.doorCount == DoorConfig.DoorCountEnum.Double;
             var isRotating = config.doorMovement == DoorConfig.DoorMovementEnum.Rotating;
 
+            if (isRotating)
+            {
+                CheckAxisQuantizationBoundary(door, warnings);
+                CheckSwingDirection(door, warnings);
+            }
+
             if (isDouble)
             {
                 CheckPanel(door, door.leftDoorMesh, "Left panel", isRotating, warnings);
@@ -92,6 +98,124 @@ namespace AutomaticDoorSystem.Editor
                         "should pivot on its hinge edge — a centred pivot makes the door spin in place and " +
                         "clip through the wall.");
                 }
+            }
+        }
+
+        /// <summary>
+        /// The world-space side the detection system treats as "front" (DirectionForward = 1):
+        /// the baker quantizes the root's world yaw into a cardinal axis (DoorBaker.CalculateDoorAxis)
+        /// and CalculateApproachDirection compares player positions along it.
+        /// </summary>
+        public static Vector3 QuantizedFrontAxis(Transform doorRoot)
+        {
+            var yaw = ((doorRoot.eulerAngles.y % 360f) + 360f) % 360f;
+            if (yaw < 45f || yaw >= 315f) return Vector3.forward;   // DoorAxis.Z
+            if (yaw < 135f) return Vector3.right;                    // DoorAxis.X
+            if (yaw < 225f) return Vector3.back;                     // DoorAxis.NegZ
+            return Vector3.left;                                     // DoorAxis.NegX
+        }
+
+        public static string AxisLabel(Vector3 axis)
+        {
+            if (axis == Vector3.forward) return "world +Z";
+            if (axis == Vector3.right) return "world +X";
+            if (axis == Vector3.back) return "world -Z";
+            return "world -X";
+        }
+
+        /// <summary>
+        /// A yaw near a 45° bucket edge means a tiny rotation flips which world axis the detection
+        /// system reads approach direction along — and with it, forward/backward.
+        /// </summary>
+        private static void CheckAxisQuantizationBoundary(DoorAuthoring door, List<string> warnings)
+        {
+            var yaw = ((door.transform.eulerAngles.y % 360f) + 360f) % 360f;
+            // Boundaries sit at 45° + 90°k; distance is measured to the nearest one.
+            var wrapped = Mathf.Repeat(yaw - 45f, 90f);
+            var distanceToBoundary = Mathf.Min(wrapped, 90f - wrapped);
+            if (distanceToBoundary < 5f)
+            {
+                warnings.Add(
+                    $"Door root yaw is {yaw:F1}° — within {distanceToBoundary:F1}° of a 45° detection-axis " +
+                    "boundary. The runtime quantizes yaw to a cardinal axis to decide which side counts as " +
+                    "'front', so doors this close to the boundary can flip forward/backward. Rotate the root " +
+                    "to a cardinal-ish angle.");
+            }
+        }
+
+        /// <summary>
+        /// Replays the full runtime chain for a player approaching each side of the door —
+        /// CalculateApproachDirection (via the quantized axis) picking DirectionForward, the
+        /// animation system's target rotation for that direction, and the panel's hinge-extent
+        /// swing — and flags any side where the door would open TOWARD the player. Forward-style
+        /// doors (and singles with BothWay, which the runtime treats as Forward) are expected to
+        /// open away from whichever side you approach; OneWay and double BothWay open a fixed way
+        /// by design and are skipped.
+        /// </summary>
+        private static void CheckSwingDirection(DoorAuthoring door, List<string> warnings)
+        {
+            var config = door.doorConfig;
+            var isDouble = config.doorCount == DoorConfig.DoorCountEnum.Double;
+
+            if (config.openingStyle == DoorConfig.OpeningStyle.OneWay) return;
+            if (isDouble && config.openingStyle == DoorConfig.OpeningStyle.BothWay) return;
+
+            var front = QuantizedFrontAxis(door.transform);
+            var forward = Quaternion.Euler(0f, config.openForwardAngle, 0f);
+            var backward = Quaternion.Euler(0f, config.openBackwardAngle, 0f);
+
+            // side, DirectionForward for a player on that side, and the target rotations the
+            // animation system would use (doubles invert forward/backward and mirror the right panel).
+            foreach (var fromFront in new[] { true, false })
+            {
+                var playerSide = fromFront ? front : -front;
+                var sideName = fromFront ? "front" : "back";
+
+                Quaternion leftTarget, rightTarget;
+                if (isDouble)
+                {
+                    var baseRotation = fromFront ? backward : forward;
+                    leftTarget = baseRotation;
+                    var euler = baseRotation.eulerAngles;
+                    rightTarget = Quaternion.Euler(euler.x, -euler.y, euler.z);
+                }
+                else
+                {
+                    leftTarget = rightTarget = fromFront ? forward : backward;
+                }
+
+                if (isDouble)
+                {
+                    CheckPanelSwing(door, door.leftDoorMesh, "Left panel", leftTarget, playerSide, sideName, warnings);
+                    CheckPanelSwing(door, door.rightDoorMesh, "Right panel", rightTarget, playerSide, sideName, warnings);
+                }
+                else
+                {
+                    CheckPanelSwing(door, door.doorMesh, "Door panel", leftTarget, playerSide, sideName, warnings);
+                }
+            }
+        }
+
+        private static void CheckPanelSwing(DoorAuthoring door, Transform panel, string label,
+            Quaternion targetLocalRotation, Vector3 playerSide, string sideName, List<string> warnings)
+        {
+            if (panel == null) return;
+            if (!TryGetPanelXProfile(panel, out var centerOffsetX, out var halfExtentX)) return;
+            if (halfExtentX < 0.01f || Mathf.Abs(centerOffsetX) < halfExtentX * 0.25f) return; // centred pivot: separate warning
+
+            // The runtime overwrites the panel's local rotation, so the open-pose free-edge
+            // direction is parentRotation * targetRotation * (hinge-extent in panel space).
+            var extentLocal = new Vector3(Mathf.Sign(centerOffsetX), 0f, 0f);
+            var parentRotation = panel.parent != null ? panel.parent.rotation : Quaternion.identity;
+            var openEdgeWorld = parentRotation * targetLocalRotation * extentLocal;
+
+            if (Vector3.Dot(openEdgeWorld, playerSide) > 0.3f)
+            {
+                warnings.Add(
+                    $"{label} '{panel.name}': approaching from the {sideName} ({AxisLabel(playerSide.normalized)} side), " +
+                    "the runtime would swing this panel TOWARD the player instead of away. The panel's hinge side " +
+                    "(or a left/right mesh swap on a double) is inverted for this door's orientation — verify with " +
+                    "'Open From Front' / 'Open From Back' below.");
             }
         }
 
