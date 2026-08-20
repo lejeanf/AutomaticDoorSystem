@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.Collections.Generic;
 using jeanf.validationTools;
 using UnityEditor;
 using UnityEngine;
@@ -10,6 +11,8 @@ namespace AutomaticDoorSystem.Editor
     [CustomEditor(typeof(DoorAuthoring))]
     public class DoorAuthoringEditor : UnityEditor.Editor
     {
+
+        private List<string> _pivotWarnings;
 
         private SerializedProperty doorConfigProp;
         private SerializedProperty doorAudioConfigProp;
@@ -32,6 +35,37 @@ namespace AutomaticDoorSystem.Editor
             triggerVolumeObjectProp = serializedObject.FindProperty("triggerVolumeObject");
             doorIdProp = serializedObject.FindProperty("doorId");
             enableDebugProp = serializedObject.FindProperty("enableDebug");
+
+            RefreshPivotWarnings(logToConsole: true);
+        }
+
+        private void OnDisable()
+        {
+            // Never leave a previewed door in a non-authored pose when the inspector goes away.
+            if (DoorPreviewDriver.IsPreviewing(target as DoorAuthoring))
+            {
+                DoorPreviewDriver.EndPreview();
+            }
+        }
+
+        /// <summary>
+        /// Heuristic pivot/orientation findings. Logged once per selection so the door "notifies",
+        /// but nothing is ever auto-fixed — the inspector asks for human confirmation via the
+        /// edit-mode test buttons instead.
+        /// </summary>
+        private void RefreshPivotWarnings(bool logToConsole)
+        {
+            var door = target as DoorAuthoring;
+            _pivotWarnings = DoorPivotAnalysis.Analyze(door);
+
+            if (logToConsole && door != null && _pivotWarnings.Count > 0)
+            {
+                Debug.LogWarning(
+                    $"[DoorAuthoring] '{door.gameObject.name}' pivot/orientation check found {_pivotWarnings.Count} " +
+                    $"possible issue(s):\n- {string.Join("\n- ", _pivotWarnings)}\n" +
+                    "These are heuristics — confirm with the edit-mode Open/Close test buttons on the DoorAuthoring " +
+                    "inspector before changing the setup.", door.gameObject);
+            }
         }
 
         public override void OnInspectorGUI()
@@ -114,6 +148,11 @@ namespace AutomaticDoorSystem.Editor
             }
 
             EditorGUILayout.PropertyField(triggerVolumeObjectProp);
+
+            EditorGUILayout.Space();
+
+            DrawPivotCheckSection();
+            DrawEditModeTestSection(doorConfig, isDouble);
 
             EditorGUILayout.Space();
 
@@ -201,6 +240,82 @@ namespace AutomaticDoorSystem.Editor
             GUI.enabled = true;
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        private void DrawPivotCheckSection()
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Pivot & Orientation Check", EditorStyles.boldLabel);
+            if (GUILayout.Button("Re-run", GUILayout.Width(60)))
+            {
+                RefreshPivotWarnings(logToConsole: false);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (_pivotWarnings == null || _pivotWarnings.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No pivot or orientation issues detected.", MessageType.None);
+                return;
+            }
+
+            EditorGUILayout.HelpBox(
+                "Possible pivot/orientation issues (heuristics — confirm with the test buttons below " +
+                "before changing anything):\n\n• " + string.Join("\n\n• ", _pivotWarnings),
+                MessageType.Warning);
+        }
+
+        private void DrawEditModeTestSection(DoorConfig doorConfig, bool isDouble)
+        {
+            EditorGUILayout.LabelField("Edit-Mode Door Test", EditorStyles.boldLabel);
+
+            if (Application.isPlaying)
+            {
+                EditorGUILayout.HelpBox("The edit-mode test is unavailable in play mode — the door systems are live.", MessageType.Info);
+                return;
+            }
+
+            var door = (DoorAuthoring)target;
+            var panelsAssigned = isDouble
+                ? door.leftDoorMesh != null && door.rightDoorMesh != null
+                : door.doorMesh != null;
+
+            if (!panelsAssigned)
+            {
+                EditorGUILayout.HelpBox("Assign the door panel(s) above to test the door.", MessageType.Info);
+                return;
+            }
+
+            // The preview replays DoorAnimationSystem's math on the authored transforms, so an
+            // erratic pivot misbehaves here exactly as it would in play mode.
+            var isRotating = doorConfig.doorMovement == DoorConfig.DoorMovementEnum.Rotating;
+            var directionMatters = isRotating &&
+                (doorConfig.openingStyle == DoorConfig.OpeningStyle.Forward ||
+                 (isDouble && doorConfig.openingStyle == DoorConfig.OpeningStyle.BothWay));
+
+            EditorGUILayout.BeginHorizontal();
+            if (directionMatters)
+            {
+                if (GUILayout.Button("Open (Fwd)")) DoorPreviewDriver.PreviewOpen(door, directionForward: true);
+                if (GUILayout.Button("Open (Bwd)")) DoorPreviewDriver.PreviewOpen(door, directionForward: false);
+            }
+            else
+            {
+                if (GUILayout.Button("Open")) DoorPreviewDriver.PreviewOpen(door);
+            }
+            if (GUILayout.Button("Close")) DoorPreviewDriver.PreviewClose(door);
+
+            GUI.enabled = DoorPreviewDriver.IsPreviewing(door);
+            if (GUILayout.Button("Reset")) DoorPreviewDriver.EndPreview();
+            GUI.enabled = true;
+            EditorGUILayout.EndHorizontal();
+
+            if (DoorPreviewDriver.IsPreviewing(door))
+            {
+                EditorGUILayout.HelpBox(
+                    "Preview active — Reset (or deselecting this door) restores the authored pose. " +
+                    "Don't save the scene while the door is posed open.",
+                    MessageType.Info);
+            }
         }
     }
     #endif
