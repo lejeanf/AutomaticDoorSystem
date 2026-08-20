@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using jeanf.audiosystems;
 using Unity.Entities;
 using UnityEngine;
 
@@ -14,6 +15,7 @@ namespace AutomaticDoorSystem
 
         private Dictionary<int, AudioSource> _doorToAudioSourceCache;
         private Dictionary<int, DoorAudioConfiguration> _doorToConfigCache;
+        private Dictionary<AudioSource, Sampler> _samplerCache;
 
         private void Awake()
         {
@@ -27,6 +29,7 @@ namespace AutomaticDoorSystem
 
             _doorToAudioSourceCache = new Dictionary<int, AudioSource>();
             _doorToConfigCache = new Dictionary<int, DoorAudioConfiguration>();
+            _samplerCache = new Dictionary<AudioSource, Sampler>();
         }
 
         private void OnDestroy()
@@ -88,7 +91,34 @@ namespace AutomaticDoorSystem
                 return;
             }
 
-            AudioClip clip = GetClipForEvent(audioEvent);
+            _doorToConfigCache.TryGetValue(audioEvent.DoorId, out DoorAudioConfiguration config);
+            if (config == null)
+            {
+                return;
+            }
+
+            // Sampler path first: a SamplerData carries its own volume, in/out points and looping
+            // windows, so it plays through the AudioSystems Sampler on the pooled source. Events
+            // with no SamplerData authored fall back to the legacy clip lists below.
+            SamplerData samplerData = config.GetSamplerDataForEventType(audioEvent.EventType);
+            if (samplerData != null && samplerData.audioClip != null)
+            {
+                if (AudioSourcePoolManager.Instance != null)
+                {
+                    // Looping SamplerData plays longer than the clip; the pool's reclaim window is
+                    // still keyed to the clip length, matching the legacy one-shot behaviour.
+                    AudioSourcePoolManager.Instance.NotifyAudioPlayback(audioEvent.DoorId, targetSource, samplerData.audioClip.length);
+                }
+
+                var sampler = GetOrAddSampler(targetSource);
+                // PlayAudioClip(data) does not set currentSamplerData, but Sampler.Update reads it
+                // for the loop window — set it first so looping SamplerData works.
+                sampler.currentSamplerData = samplerData;
+                sampler.PlayAudioClip(samplerData);
+                return;
+            }
+
+            AudioClip clip = config.GetClipForEventType(audioEvent.EventType);
 
             if (clip == null)
             {
@@ -108,17 +138,26 @@ namespace AutomaticDoorSystem
             return _doorToAudioSourceCache.GetValueOrDefault(doorNumber);
         }
 
-        private AudioClip GetClipForEvent(DoorAudioEventComponent audioEvent)
+        /// <summary>
+        /// The Sampler living on a pooled AudioSource, added on first use. Pooled sources are plain
+        /// AudioSource prefabs (with optional Steam Audio components); the Sampler rides along and
+        /// is rebound in case the pool prefab someday ships its own.
+        /// </summary>
+        private Sampler GetOrAddSampler(AudioSource source)
         {
-            if (_doorToConfigCache.TryGetValue(audioEvent.DoorId, out DoorAudioConfiguration config))
+            if (_samplerCache.TryGetValue(source, out var sampler) && sampler != null)
             {
-                if (config != null)
-                {
-                    return config.GetClipForEventType(audioEvent.EventType);
-                }
+                return sampler;
             }
 
-            return null;
+            sampler = source.GetComponent<Sampler>();
+            if (sampler == null)
+            {
+                sampler = source.gameObject.AddComponent<Sampler>();
+            }
+            sampler.audioSource = source;
+            _samplerCache[source] = sampler;
+            return sampler;
         }
 
         public void RegisterAudioSource(int doorNumber, AudioSource audioSource, DoorAudioConfiguration config)
@@ -141,6 +180,7 @@ namespace AutomaticDoorSystem
             {
                 _doorToAudioSourceCache.Remove(doorNumber);
                 _doorToConfigCache.Remove(doorNumber);
+                if (audioSource != null) _samplerCache.Remove(audioSource);
             }
         }
     }

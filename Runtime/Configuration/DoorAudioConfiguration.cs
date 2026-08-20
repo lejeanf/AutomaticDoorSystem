@@ -1,5 +1,6 @@
 using UnityEngine;
 using SteamAudio;
+using jeanf.audiosystems;
 using jeanf.propertyDrawer;
 
 namespace AutomaticDoorSystem
@@ -26,7 +27,22 @@ namespace AutomaticDoorSystem
         [Tooltip("Audio rolloff mode")]
         public AudioRolloffMode rolloffMode = AudioRolloffMode.Linear;
 
-        [Header("Audio Clips")]
+        [Header("Sampler Data (preferred)")]
+        [Tooltip("SamplerData assets to play when the door opens (one is picked at random). When a list is " +
+                 "empty the legacy Audio Clips below are used for that event. SamplerData carries its own " +
+                 "volume, in/out points and looping windows (AudioSystems package).")]
+        public SamplerData[] openSamplerData;
+
+        [Tooltip("SamplerData assets to play when the door closes (one is picked at random)")]
+        public SamplerData[] closeSamplerData;
+
+        [Tooltip("SamplerData assets to play when the door locks (one is picked at random)")]
+        public SamplerData[] lockSamplerData;
+
+        [Tooltip("SamplerData assets to play when the door unlocks (one is picked at random)")]
+        public SamplerData[] unlockSamplerData;
+
+        [Header("Audio Clips (legacy fallback)")]
         [Tooltip("Sound to play when door opens (can be multiple for variation)")]
         public AudioClip[] openSoundClips;
 
@@ -223,6 +239,33 @@ namespace AutomaticDoorSystem
                 return clips[0];
 
             return clips[Random.Range(0, clips.Length)];
+        }
+
+        /// <summary>
+        /// The SamplerData to play for an event, or null when none is authored for it — the caller
+        /// then falls back to <see cref="GetClipForEventType"/> (legacy clip lists).
+        /// </summary>
+        public SamplerData GetSamplerDataForEventType(AudioEventType eventType)
+        {
+            return eventType switch
+            {
+                AudioEventType.Open => GetRandomSamplerData(openSamplerData),
+                AudioEventType.Close => GetRandomSamplerData(closeSamplerData),
+                AudioEventType.Lock => GetRandomSamplerData(lockSamplerData),
+                AudioEventType.Unlock => GetRandomSamplerData(unlockSamplerData),
+                _ => null
+            };
+        }
+
+        private SamplerData GetRandomSamplerData(SamplerData[] data)
+        {
+            if (data == null || data.Length == 0)
+                return null;
+
+            if (data.Length == 1)
+                return data[0];
+
+            return data[Random.Range(0, data.Length)];
         }
     }
 }

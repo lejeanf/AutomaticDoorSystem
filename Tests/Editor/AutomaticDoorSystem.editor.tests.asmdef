@@ -3,6 +3,7 @@
     "rootNamespace": "AutomaticDoorSystem.Tests",
     "references": [
         "AutomaticDoorSystem",
+        "jeanf.audiosystems",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "Unity.Collections",

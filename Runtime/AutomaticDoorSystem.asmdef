@@ -12,6 +12,7 @@
         "jeanf.scenemanagement",
         "jeanf.propertyDrawer",
         "jeanf.eventsystem",
+        "jeanf.audiosystems",
         "Unity.Entities.Graphics",
         "SteamAudioUnity"
     ],
