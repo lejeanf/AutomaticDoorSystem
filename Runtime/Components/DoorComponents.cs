@@ -87,6 +87,13 @@ namespace AutomaticDoorSystem
         /// axes (e.g. parallel-rail Z offsets) survives the first animation frame.
         /// </summary>
         public float3 InitialLocalPosition;
+        /// <summary>
+        /// Steam Audio geometry exported from the panel's SteamAudioDynamicObject (null ref when
+        /// the panel has none). The collider pool attaches it to the pooled panel proxy so the
+        /// moving door occludes and reflects sound at runtime — the baked SteamAudio components
+        /// themselves are stripped with the rest of the SubScene GameObjects.
+        /// </summary>
+        public UnityObjectRef<SteamAudio.SerializedData> AudioGeometry;
     }
 
     public struct DoorAudioEventComponent : IComponentData

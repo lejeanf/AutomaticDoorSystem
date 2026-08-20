@@ -33,6 +33,11 @@ namespace AutomaticDoorSystem.Utilities
         [Tooltip("Keep BoxColliders assigned to out-of-range doors until needed")]
         public bool keepOutOfRangeAssignments = true;
 
+        [Tooltip("Attach the panel's baked Steam Audio geometry (SteamAudioDynamicObject exported asset) to the " +
+                 "pooled panel proxy, so moving doors occlude and reflect sound. Panels without an exported asset " +
+                 "are skipped.")]
+        public bool enableSteamAudioGeometry = true;
+
         private struct ColliderAssignment
         {
             public int doorId;
@@ -43,6 +48,7 @@ namespace AutomaticDoorSystem.Utilities
         private Transform _poolContainer;
         private BoxCollider[] _colliderPool;
         private Rigidbody[] _rigidbodyPool;
+        private SteamAudio.SteamAudioDynamicObject[] _audioGeometryPool;
         private ColliderAssignment[] _colliderAssignments;
         private DoorSelectionStrategy _selectionStrategy;
         private float _updateAccumulator;
@@ -135,6 +141,7 @@ namespace AutomaticDoorSystem.Utilities
 
             _colliderPool = new BoxCollider[maxPoolSize];
             _rigidbodyPool = new Rigidbody[maxPoolSize];
+            _audioGeometryPool = new SteamAudio.SteamAudioDynamicObject[maxPoolSize];
             _colliderAssignments = new ColliderAssignment[maxPoolSize];
             _selectionStrategy = new DoorSelectionStrategy(500, maxPoolSize, Allocator.Persistent);
             _updateWait = new WaitForSeconds(distanceCheckInterval);
@@ -259,6 +266,9 @@ namespace AutomaticDoorSystem.Utilities
             for (int i = colliderIndex; i < maxPoolSize; i++)
             {
                 _colliderPool[i].enabled = false;
+                // OnDisable removes the instanced mesh from the Steam Audio scene; the component
+                // and its loaded asset stay cached for when this slot serves the same door again.
+                if (_audioGeometryPool[i] != null) _audioGeometryPool[i].enabled = false;
                 _colliderAssignments[i] = new ColliderAssignment { doorId = -1, panelIndex = -1 };
             }
         }
@@ -323,6 +333,38 @@ namespace AutomaticDoorSystem.Utilities
             rb.MoveRotation(panelInfo.rotation);
             rb.MovePosition(panelInfo.position);
             collider.enabled = true;
+
+            ConfigureAudioGeometry(poolIndex, panelInfo.audioGeometry);
+        }
+
+        /// <summary>
+        /// Attaches the panel's baked Steam Audio geometry to the pooled proxy. The proxy already
+        /// follows the panel transform for its collider, and SteamAudioDynamicObject tracks
+        /// transform.hasChanged itself, so the occlusion geometry moves with the door for free.
+        /// The component caches its instanced mesh from the FIRST asset it loads, so a slot
+        /// reassigned to a different door needs a fresh component — changing the field would
+        /// silently keep simulating the old door's geometry.
+        /// </summary>
+        private void ConfigureAudioGeometry(int poolIndex, SteamAudio.SerializedData asset)
+        {
+            var current = _audioGeometryPool[poolIndex];
+
+            if (!enableSteamAudioGeometry || asset == null)
+            {
+                if (current != null) current.enabled = false;
+                return;
+            }
+
+            if (current != null && current.asset == asset)
+            {
+                current.enabled = true;
+                return;
+            }
+
+            if (current != null) Destroy(current);
+            current = _colliderPool[poolIndex].gameObject.AddComponent<SteamAudio.SteamAudioDynamicObject>();
+            current.asset = asset;
+            _audioGeometryPool[poolIndex] = current;
         }
 
         private int LayerMaskToLayer(LayerMask layerMask)

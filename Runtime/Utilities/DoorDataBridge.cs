@@ -44,6 +44,9 @@ namespace AutomaticDoorSystem.Utilities
             public Vector3 colliderSize;
             public Vector3 colliderCenter;
             public bool hasColliderData;
+            /// <summary>Baked from the panel's SteamAudioDynamicObject; null for a panel without
+            /// Steam Audio geometry. The collider pool attaches it to the pooled panel proxy.</summary>
+            public SteamAudio.SerializedData audioGeometry;
         }
 
         private EntityManager _entityManager;
@@ -121,7 +124,8 @@ namespace AutomaticDoorSystem.Utilities
                         isLeftPanel = isLeftPanel,
                         colliderSize = bufferElement.ColliderSize,
                         colliderCenter = bufferElement.ColliderCenter,
-                        hasColliderData = bufferElement.HasColliderData == 1
+                        hasColliderData = bufferElement.HasColliderData == 1,
+                        audioGeometry = bufferElement.AudioGeometry.Value
                     };
                 }
             }

@@ -40,7 +40,10 @@ namespace AutomaticDoorSystem
 
         /// <summary>
         /// Panel wiring must match the assigned config: a Double config needs BOTH panels, a Single
-        /// config needs the door mesh — otherwise nothing animates. Surfaced through the propertyDrawer
+        /// config needs the door mesh — otherwise nothing animates. Also invalid: a panel whose
+        /// SteamAudioDynamicObject has no exported asset — the pooled panel proxy would then carry
+        /// no Steam Audio geometry and the moving door silently stops occluding sound (select the
+        /// panel and click 'Export Dynamic Object'). Surfaced through the propertyDrawer
         /// validation framework (inspector banner, hierarchy highlight, play-mode console scan).
         /// A null config returns true here because the [Validation] field above already flags it.
         /// Cross-scene rules (duplicate ids, managers present, subscene placement) stay in the
@@ -50,11 +53,21 @@ namespace AutomaticDoorSystem
         {
             get
             {
+                if (HasUnexportedAudioGeometry(doorMesh) || HasUnexportedAudioGeometry(leftDoorMesh) ||
+                    HasUnexportedAudioGeometry(rightDoorMesh)) return false;
+
                 if (doorConfig == null) return true;
                 return doorConfig.doorCount == DoorConfig.DoorCountEnum.Double
                     ? leftDoorMesh != null && rightDoorMesh != null
                     : doorMesh != null;
             }
+        }
+
+        private static bool HasUnexportedAudioGeometry(Transform panel)
+        {
+            return panel != null
+                && panel.TryGetComponent<SteamAudio.SteamAudioDynamicObject>(out var dynamicObject)
+                && dynamicObject.asset == null;
         }
 
         /// <summary>
@@ -649,7 +662,8 @@ namespace AutomaticDoorSystem
                             ColliderSize = leftColliderData.size,
                             ColliderCenter = leftColliderData.center,
                             HasColliderData = leftColliderData.hasData,
-                            InitialLocalPosition = authoring.leftDoorMesh.localPosition
+                            InitialLocalPosition = authoring.leftDoorMesh.localPosition,
+                            AudioGeometry = ExtractAudioGeometry(authoring.leftDoorMesh)
                         });
 
                     }
@@ -667,7 +681,8 @@ namespace AutomaticDoorSystem
                             ColliderSize = rightColliderData.size,
                             ColliderCenter = rightColliderData.center,
                             HasColliderData = rightColliderData.hasData,
-                            InitialLocalPosition = authoring.rightDoorMesh.localPosition
+                            InitialLocalPosition = authoring.rightDoorMesh.localPosition,
+                            AudioGeometry = ExtractAudioGeometry(authoring.rightDoorMesh)
                         });
                     }
                 }
@@ -685,7 +700,8 @@ namespace AutomaticDoorSystem
                         ColliderSize = colliderData.size,
                         ColliderCenter = colliderData.center,
                         HasColliderData = colliderData.hasData,
-                        InitialLocalPosition = authoring.doorMesh.localPosition
+                        InitialLocalPosition = authoring.doorMesh.localPosition,
+                        AudioGeometry = ExtractAudioGeometry(authoring.doorMesh)
                     });
 
                 }
@@ -716,6 +732,27 @@ namespace AutomaticDoorSystem
                     return DoorAxis.NegZ;
                 else
                     return DoorAxis.NegX;
+            }
+
+            /// <summary>
+            /// Steam Audio geometry authored on the panel (SteamAudioDynamicObject + exported
+            /// asset). The component itself is stripped at bake; only the asset reference
+            /// survives, and the collider pool re-attaches it to the pooled panel proxy.
+            /// </summary>
+            private UnityObjectRef<SteamAudio.SerializedData> ExtractAudioGeometry(Transform panelTransform)
+            {
+                var dynamicObject = panelTransform.GetComponent<SteamAudio.SteamAudioDynamicObject>();
+                if (dynamicObject == null) return default;
+
+                DependsOn(dynamicObject);
+                if (dynamicObject.asset == null)
+                {
+                    Debug.LogWarning($"[DoorAuthoring] '{panelTransform.name}' has a SteamAudioDynamicObject with no " +
+                        "exported asset — the moving door will not occlude or reflect sound. Select the panel and " +
+                        "click 'Export Dynamic Object', then re-bake.", panelTransform);
+                    return default;
+                }
+                return dynamicObject.asset;
             }
 
             private (float3 size, float3 center, byte hasData) ExtractColliderData(Transform panelTransform)
