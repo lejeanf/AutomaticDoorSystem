@@ -630,10 +630,10 @@ namespace AutomaticDoorSystem.Editor
             var scanned = SubSceneDoorScanner.ScanAll();
             if (scanned.Count == 0) return;
 
-            var baked = SubSceneDoorScanner.BakedDoorIds();
+            SubSceneDoorScanner.BakedDoorIds(out var baked, out var bakedDisabled);
             int authoredTotal = scanned.Sum(s => s.AuthoringIds.Count);
 
-            if (baked.Count == 0 && authoredTotal > 0)
+            if (baked.Count == 0 && bakedDisabled.Count == 0 && authoredTotal > 0)
             {
                 checks.Add(new Check
                 {
@@ -670,10 +670,32 @@ namespace AutomaticDoorSystem.Editor
             {
                 if (entry.AuthoringIds.Count == 0) continue;
 
-                var missing = entry.AuthoringIds.Where(id => !baked.Contains(id)).Distinct().ToList();
+                var subScene = entry.SubScene;
+                var notEnabled = entry.AuthoringIds.Where(id => !baked.Contains(id)).Distinct().ToList();
+                if (notEnabled.Count == 0) continue;
+
+                // Baked, but from an inactive GameObject: the entity exists with a Disabled tag,
+                // so the bake is fine - the door is just switched off. Deliberate for door
+                // variants; a mistake when the door was supposed to work.
+                var disabledOnes = notEnabled.Where(id => bakedDisabled.Contains(id)).ToList();
+                if (disabledOnes.Count > 0)
+                {
+                    bool knownInactive = disabledOnes.All(id => entry.InactiveAuthoringIds.Contains(id));
+                    checks.Add(new Check
+                    {
+                        Severity = knownInactive ? Severity.Info : Severity.Warning,
+                        Message = $"Subscene '{subScene.SceneName}': door id(s) {string.Join(", ", disabledOnes)} " +
+                                  "are baked but DISABLED (their GameObject is inactive). A disabled door does " +
+                                  "not detect, move, or make a sound until something activates it at runtime. " +
+                                  "Fine for intentionally switched-off door variants - if one of these should " +
+                                  "work, activate its GameObject and save the subscene.",
+                        Context = subScene
+                    });
+                }
+
+                var missing = notEnabled.Except(disabledOnes).ToList();
                 if (missing.Count == 0) continue;
 
-                var subScene = entry.SubScene;
                 checks.Add(new Check
                 {
                     Severity = Severity.Error,
@@ -690,7 +712,8 @@ namespace AutomaticDoorSystem.Editor
             }
 
             var authoredEverywhere = new HashSet<int>(scanned.SelectMany(s => s.AuthoringIds));
-            var stale = baked.Where(id => !authoredEverywhere.Contains(id)).OrderBy(id => id).ToList();
+            var stale = baked.Concat(bakedDisabled)
+                .Where(id => !authoredEverywhere.Contains(id)).Distinct().OrderBy(id => id).ToList();
             if (stale.Count > 0)
             {
                 checks.Add(new Check

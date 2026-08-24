@@ -25,6 +25,9 @@ namespace AutomaticDoorSystem.Editor
             public string ScenePath;
             public bool IsLoaded;
             public List<int> AuthoringIds = new();
+            /// <summary>Ids whose authoring GameObject is inactive (only known for loaded
+            /// subscenes - text scans cannot cheaply resolve activity).</summary>
+            public HashSet<int> InactiveAuthoringIds = new();
         }
 
         private static readonly Regex PlainDoorId = new(@"^  doorId: (\d+)\r?$", RegexOptions.Multiline | RegexOptions.Compiled);
@@ -54,8 +57,14 @@ namespace AutomaticDoorSystem.Editor
                 {
                     foreach (var root in subScene.EditingScene.GetRootGameObjects())
                     {
-                        entry.AuthoringIds.AddRange(
-                            root.GetComponentsInChildren<DoorAuthoring>(true).Select(d => d.doorId));
+                        foreach (var door in root.GetComponentsInChildren<DoorAuthoring>(true))
+                        {
+                            entry.AuthoringIds.Add(door.doorId);
+                            if (!door.gameObject.activeInHierarchy)
+                            {
+                                entry.InactiveAuthoringIds.Add(door.doorId);
+                            }
+                        }
                     }
                 }
                 else
@@ -139,23 +148,39 @@ namespace AutomaticDoorSystem.Editor
         /// <summary>
         /// Door ids that exist as baked entities in the default world right now - closed subscenes
         /// stream their baked entities into the editor world, open ones are live-baked, so in both
-        /// edit and play mode this is "what the runtime would actually see".
+        /// edit and play mode this is "what the runtime would actually see". Doors baked from
+        /// inactive GameObjects carry the Disabled tag and land in <paramref name="disabled"/>:
+        /// they exist in the bake but are invisible to detection, animation and audio until
+        /// something activates them - the correct state for a deliberately disabled door variant,
+        /// and the explanation when a "configured" door does nothing at runtime.
         /// </summary>
-        public static HashSet<int> BakedDoorIds()
+        public static void BakedDoorIds(out HashSet<int> enabled, out HashSet<int> disabled)
         {
-            var ids = new HashSet<int>();
+            enabled = new HashSet<int>();
+            disabled = new HashSet<int>();
 
             var world = World.DefaultGameObjectInjectionWorld;
-            if (world == null || !world.IsCreated) return ids;
+            if (world == null || !world.IsCreated) return;
 
-            using var query = world.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<DoorComponent>());
-            using var doors = query.ToComponentDataArray<DoorComponent>(Unity.Collections.Allocator.Temp);
-            foreach (var door in doors)
+            using (var query = world.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<DoorComponent>()))
+            using (var doors = query.ToComponentDataArray<DoorComponent>(Unity.Collections.Allocator.Temp))
             {
-                ids.Add(door.DoorId);
+                foreach (var door in doors) enabled.Add(door.DoorId);
             }
 
-            return ids;
+            var allDesc = new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<DoorComponent>() },
+                Options = EntityQueryOptions.IncludeDisabledEntities
+            };
+            using (var query = world.EntityManager.CreateEntityQuery(allDesc))
+            using (var doors = query.ToComponentDataArray<DoorComponent>(Unity.Collections.Allocator.Temp))
+            {
+                foreach (var door in doors)
+                {
+                    if (!enabled.Contains(door.DoorId)) disabled.Add(door.DoorId);
+                }
+            }
         }
 
         /// <summary>Call when assets may have changed (the cache holds prefab door ids).</summary>

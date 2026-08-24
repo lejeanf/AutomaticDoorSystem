@@ -126,6 +126,15 @@ namespace AutomaticDoorSystem.Editor
                     "id differs from the authoring (stale bake - re-bake the subscene), or baking skipped the " +
                     "door (missing DoorConfig)."))
             {
+                SubSceneDoorScanner.BakedDoorIds(out _, out var disabledIds);
+                if (disabledIds.Contains(_doorId))
+                {
+                    EditorGUILayout.HelpBox(
+                        $"Door {_doorId} IS baked - but DISABLED: its authoring GameObject is inactive, so the " +
+                        "entity carries the Disabled tag and is invisible to detection, animation and audio. " +
+                        "If this door should work, activate its GameObject in the subscene and save.",
+                        MessageType.Warning);
+                }
                 EditorGUILayout.HelpBox(LoadedIdsSummary(dataBridge), MessageType.Info);
                 DrawAuthoringLocator();
                 return;
@@ -444,6 +453,12 @@ namespace AutomaticDoorSystem.Editor
 
             if (!dataBridge.TryGetDoorInfo(doorId, out var info))
             {
+                SubSceneDoorScanner.BakedDoorIds(out _, out var disabledIds);
+                if (disabledIds.Contains(doorId))
+                {
+                    return $"Door {doorId} is baked but DISABLED (inactive GameObject) - activate it in the " +
+                           "subscene if it should work.";
+                }
                 return $"No baked door entity with id {doorId} - stale bake or subscene not entity-loaded. " +
                        LoadedIdsSummary(dataBridge);
             }
