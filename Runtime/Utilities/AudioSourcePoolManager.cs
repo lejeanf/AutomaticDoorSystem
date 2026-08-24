@@ -506,6 +506,31 @@ namespace AutomaticDoorSystem
             }
         }
 
+        /// <summary>
+        /// Diagnostic lookup of the pool slot currently holding a door, if any. Used by the
+        /// Door Audio Doctor window; not part of the playback path.
+        /// </summary>
+        public bool TryGetPoolSlot(int doorNumber, out int poolIndex, out AudioSource audioSource, out bool isPlayingFlag)
+        {
+            poolIndex = -1;
+            audioSource = null;
+            isPlayingFlag = false;
+
+            if (_poolStates == null) return false;
+
+            for (int i = 0; i < _poolStates.Length; i++)
+            {
+                if (_poolStates[i].assignedDoorNumber != doorNumber) continue;
+
+                poolIndex = i;
+                audioSource = _poolStates[i].audioSource;
+                isPlayingFlag = _poolStates[i].isPlayingAudio;
+                return true;
+            }
+
+            return false;
+        }
+
         [ContextMenu("Force Update Audio Sources")]
         public void ForceUpdateAudioSources()
         {

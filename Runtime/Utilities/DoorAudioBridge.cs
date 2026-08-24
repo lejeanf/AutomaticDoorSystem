@@ -157,6 +157,20 @@ namespace AutomaticDoorSystem
             return sampler;
         }
 
+        /// <summary>
+        /// Diagnostic lookup for the registration this bridge would use for a door's next audio
+        /// event. Used by the Door Audio Doctor window; not part of the playback path.
+        /// </summary>
+        public bool TryGetRegistration(int doorNumber, out AudioSource audioSource, out DoorAudioConfiguration config)
+        {
+            audioSource = null;
+            config = null;
+            if (_doorToAudioSourceCache == null) return false;
+
+            _doorToConfigCache?.TryGetValue(doorNumber, out config);
+            return _doorToAudioSourceCache.TryGetValue(doorNumber, out audioSource) && audioSource != null;
+        }
+
         public void RegisterAudioSource(int doorNumber, AudioSource audioSource, DoorAudioConfiguration config)
         {
             if (_doorToAudioSourceCache == null || audioSource == null) return;
