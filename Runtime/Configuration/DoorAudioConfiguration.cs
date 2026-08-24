@@ -267,5 +267,24 @@ namespace AutomaticDoorSystem
 
             return data[Random.Range(0, data.Length)];
         }
+
+#if UNITY_EDITOR
+        // Surfaces authoring problems (empty slots, half-authored open/close pairs, broken
+        // SamplerData loop windows) in the console while the asset is being edited, so they are
+        // caught here instead of as a silent door in playmode. The full project sweep lives in
+        // Tools > AutomaticDoorSystem > Setup Validator.
+        private void OnValidate()
+        {
+            if (UnityEditor.Selection.activeObject != this) return;
+
+            foreach (var issue in DoorAudioConfigurationValidator.Validate(this))
+            {
+                var context = issue.Context != null ? issue.Context : this;
+                var message = $"[DoorAudioConfiguration] {name}: {issue.Message}";
+                if (issue.IsError) Debug.LogError(message, context);
+                else Debug.LogWarning(message, context);
+            }
+        }
+#endif
     }
 }

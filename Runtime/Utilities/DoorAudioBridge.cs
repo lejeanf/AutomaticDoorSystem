@@ -111,9 +111,6 @@ namespace AutomaticDoorSystem
                 }
 
                 var sampler = GetOrAddSampler(targetSource);
-                // PlayAudioClip(data) does not set currentSamplerData, but Sampler.Update reads it
-                // for the loop window — set it first so looping SamplerData works.
-                sampler.currentSamplerData = samplerData;
                 sampler.PlayAudioClip(samplerData);
                 return;
             }

@@ -186,6 +186,7 @@ namespace AutomaticDoorSystem.Editor
             CheckManagers(subScenePaths);
             CheckPlayer(doors, subScenePaths);
             CheckDoors(doors, subScenePaths);
+            CheckAudioConfigurations(doors);
             CheckLegacyIdentifiers(doors);
 
             Repaint();
@@ -611,6 +612,54 @@ namespace AutomaticDoorSystem.Editor
                           "so without one the panel falls back to a generic 1 x 2.5 x 0.1 box.",
                 Context = panel
             });
+        }
+
+        /// <summary>
+        /// Sweeps every DoorAudioConfiguration asset in the project (not just those on open doors)
+        /// through DoorAudioConfigurationValidator - the same rules DoorAudioBridge lives by at
+        /// runtime - so a half-authored or broken config is caught here instead of as a door that
+        /// plays its open sound but not its close sound in playmode.
+        /// </summary>
+        private void CheckAudioConfigurations(List<DoorAuthoring> doors)
+        {
+            var checks = new List<Check>();
+            int total = 0;
+
+            foreach (var guid in AssetDatabase.FindAssets("t:DoorAudioConfiguration"))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var config = AssetDatabase.LoadAssetAtPath<DoorAudioConfiguration>(path);
+                if (config == null) continue;
+
+                total++;
+
+                var issues = DoorAudioConfigurationValidator.Validate(config);
+                if (issues.Count == 0) continue;
+
+                int usedBy = doors.Count(d => d.doorAudioConfig == config);
+                string usage = usedBy > 0 ? $" (used by {usedBy} open door(s))" : "";
+
+                foreach (var issue in issues)
+                {
+                    checks.Add(new Check
+                    {
+                        Severity = issue.IsError ? Severity.Error : Severity.Warning,
+                        Message = $"'{config.name}'{usage}: {issue.Message}",
+                        Context = issue.Context != null ? issue.Context : config
+                    });
+                }
+            }
+
+            if (checks.Count == 0 && total > 0)
+            {
+                checks.Add(new Check
+                {
+                    Severity = Severity.Ok,
+                    Message = $"{total} DoorAudioConfiguration asset(s) checked - all correctly authored."
+                });
+            }
+
+            AddSection("Audio configurations", checks);
         }
 
         private void CheckLegacyIdentifiers(List<DoorAuthoring> doors)
