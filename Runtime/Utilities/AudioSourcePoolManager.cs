@@ -391,6 +391,9 @@ namespace AutomaticDoorSystem
             }
 
             state.assignedDoorNumber = doorInfo.doorId;
+            // The door id in the name makes the hierarchy and the audio doctor legible: which
+            // pooled source belongs to which door is otherwise invisible.
+            state.audioSource.gameObject.name = $"PooledAudioSource_{poolIndex:D2} [door {doorInfo.doorId}]";
             _poolStates[poolIndex] = state;
         }
 
@@ -469,6 +472,10 @@ namespace AutomaticDoorSystem
             state = _poolStates[poolIndex];
             state.fadeCoroutine = null;
             state.assignedDoorNumber = -1;
+            if (state.audioSource != null)
+            {
+                state.audioSource.gameObject.name = $"PooledAudioSource_{poolIndex:D2}";
+            }
             _poolStates[poolIndex] = state;
         }
 

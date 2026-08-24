@@ -186,6 +186,7 @@ namespace AutomaticDoorSystem.Editor
             CheckManagers(subScenePaths);
             CheckPlayer(doors, subScenePaths);
             CheckDoors(doors, subScenePaths);
+            CheckSubSceneBakes();
             CheckAudioConfigurations(doors);
             CheckLegacyIdentifiers(doors);
 
@@ -612,6 +613,107 @@ namespace AutomaticDoorSystem.Editor
                           "so without one the panel falls back to a generic 1 x 2.5 x 0.1 box.",
                 Context = panel
             });
+        }
+
+        /// <summary>
+        /// Compares what each subscene AUTHORS (door ids, read live or text-scanned from the scene
+        /// file - no need to open anything) against the door ids that actually EXIST as baked
+        /// entities in the world. A door authored but not baked is exactly the "looks configured
+        /// but never makes a sound or moves" failure: stale bake, still importing, or skipped at
+        /// bake (missing DoorConfig). A baked id no subscene authors is a stale leftover.
+        /// </summary>
+        private void CheckSubSceneBakes()
+        {
+            var checks = new List<Check>();
+
+            SubSceneDoorScanner.ClearCache();
+            var scanned = SubSceneDoorScanner.ScanAll();
+            if (scanned.Count == 0) return;
+
+            var baked = SubSceneDoorScanner.BakedDoorIds();
+            int authoredTotal = scanned.Sum(s => s.AuthoringIds.Count);
+
+            if (baked.Count == 0 && authoredTotal > 0)
+            {
+                checks.Add(new Check
+                {
+                    Severity = Severity.Warning,
+                    Message = $"{authoredTotal} door(s) authored across {scanned.Count} subscene(s) but no baked " +
+                              "door entities exist in the world yet. Subscenes may still be importing - wait for " +
+                              "the import to finish and re-run, or open the subscenes to trigger baking."
+                });
+                AddSection("Subscene bake", checks);
+                return;
+            }
+
+            // Duplicate ids across ALL subscenes, open or closed - the open-scenes duplicate check
+            // above cannot see into closed ones.
+            var duplicates = scanned
+                .SelectMany(s => s.AuthoringIds.Select(id => (id, s)))
+                .GroupBy(t => t.id)
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in duplicates)
+            {
+                checks.Add(new Check
+                {
+                    Severity = Severity.Error,
+                    Message = $"Door id {group.Key} is authored {group.Count()} times across subscene(s) " +
+                              $"{string.Join(", ", group.Select(t => t.s.SubScene.SceneName).Distinct())}. " +
+                              "Ids key the pools and audio registrations, so all but one of these doors go silent.",
+                    Context = group.First().s.SubScene
+                });
+            }
+
+            foreach (var entry in scanned)
+            {
+                if (entry.AuthoringIds.Count == 0) continue;
+
+                var missing = entry.AuthoringIds.Where(id => !baked.Contains(id)).Distinct().ToList();
+                if (missing.Count == 0) continue;
+
+                var subScene = entry.SubScene;
+                checks.Add(new Check
+                {
+                    Severity = Severity.Error,
+                    Message = $"Subscene '{subScene.SceneName}': door id(s) {string.Join(", ", missing)} are " +
+                              "authored but have NO baked entity - those doors will not move or make a sound. " +
+                              "Stale bake, import still running, or the door was skipped at bake (missing " +
+                              "DoorConfig). Opening the subscene re-bakes it live.",
+                    Context = subScene,
+                    FixLabel = entry.IsLoaded ? null : $"Open '{subScene.SceneName}'",
+                    Fix = entry.IsLoaded
+                        ? null
+                        : () => Unity.Scenes.Editor.SubSceneUtility.EditScene(subScene)
+                });
+            }
+
+            var authoredEverywhere = new HashSet<int>(scanned.SelectMany(s => s.AuthoringIds));
+            var stale = baked.Where(id => !authoredEverywhere.Contains(id)).OrderBy(id => id).ToList();
+            if (stale.Count > 0)
+            {
+                checks.Add(new Check
+                {
+                    Severity = Severity.Warning,
+                    Message = $"Baked door entity id(s) {string.Join(", ", stale)} exist in the world but no " +
+                              "subscene in the hierarchy authors them - stale bakes (an id was changed after " +
+                              "baking) or doors from a scene outside this hierarchy. If a door recently got a " +
+                              "new id, its old baked entity may still be answering events meant for nobody."
+                });
+            }
+
+            if (checks.Count == 0)
+            {
+                checks.Add(new Check
+                {
+                    Severity = Severity.Ok,
+                    Message = $"{authoredTotal} authored door(s) across {scanned.Count} subscene(s) - every " +
+                              "authored id has a baked entity, and no stale baked ids found."
+                });
+            }
+
+            AddSection("Subscene bake", checks);
         }
 
         /// <summary>

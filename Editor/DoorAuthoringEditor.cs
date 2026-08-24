@@ -128,6 +128,8 @@ namespace AutomaticDoorSystem.Editor
                     MessageType.Warning);
             }
 
+            DrawAudioDiagnostics((DoorAuthoring)target);
+
             EditorGUILayout.Space();
 
             bool isDouble = doorConfig.doorCount == DoorConfig.DoorCountEnum.Double;
@@ -240,6 +242,71 @@ namespace AutomaticDoorSystem.Editor
             GUI.enabled = true;
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        /// <summary>
+        /// The audio checks, right on the door. Edit mode: the assigned config run through the
+        /// same validator as the Setup Validator window. Play mode: the door's live audio-chain
+        /// status plus the doctor's test buttons - fire a real open/close audio event and select
+        /// the pooled AudioSource serving this door - so a silent door is debugged where it is
+        /// configured.
+        /// </summary>
+        private void DrawAudioDiagnostics(DoorAuthoring door)
+        {
+            var config = door.doorAudioConfig;
+            if (config != null)
+            {
+                var issues = DoorAudioConfigurationValidator.Validate(config);
+                int shown = 0;
+                foreach (var issue in issues)
+                {
+                    if (shown++ == 4)
+                    {
+                        EditorGUILayout.HelpBox(
+                            $"...and {issues.Count - 4} more issue(s) - run Tools > Jeanf > AutomaticDoorSystem > " +
+                            "Setup Validator for the full list.", MessageType.Info);
+                        break;
+                    }
+                    EditorGUILayout.HelpBox($"Audio config '{config.name}': {issue.Message}",
+                        issue.IsError ? MessageType.Error : MessageType.Warning);
+                }
+            }
+
+            if (!Application.isPlaying) return;
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Live Audio (play mode)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(DoorAudioDoctorWindow.LiveStatusSummary(door.doorId), MessageType.None);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                var source = DoorAudioDoctorWindow.FindAssignedSource(door.doorId);
+                using (new EditorGUI.DisabledScope(source == null))
+                {
+                    if (GUILayout.Button("Select AudioSource"))
+                    {
+                        Selection.activeGameObject = source.gameObject;
+                        EditorGUIUtility.PingObject(source.gameObject);
+                    }
+                }
+
+                if (GUILayout.Button("Fire Open"))
+                {
+                    if (!DoorAudioDoctorWindow.TryFireTestEvent(door.doorId, AudioEventType.Open, out var error))
+                        Debug.LogError(error);
+                }
+
+                if (GUILayout.Button("Fire Close"))
+                {
+                    if (!DoorAudioDoctorWindow.TryFireTestEvent(door.doorId, AudioEventType.Close, out var error))
+                        Debug.LogError(error);
+                }
+
+                if (GUILayout.Button("Doctor..."))
+                {
+                    DoorAudioDoctorWindow.Open(door.doorId);
+                }
+            }
         }
 
         private void DrawPivotCheckSection()
