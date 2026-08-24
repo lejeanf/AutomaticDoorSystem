@@ -213,6 +213,12 @@ namespace AutomaticDoorSystem.Editor
                     "deactivated by the pool.");
             }
 
+            // --- output stage: listener, routing, spatial processing ---
+            if (hasSlot && slotSource != null)
+            {
+                DrawOutputStage(slotSource);
+            }
+
             // --- bridge registration ---
             bool registered = audioBridge.TryGetRegistration(_doorId, out var registeredSource, out var registeredConfig);
             Row(registered, registered
@@ -229,6 +235,85 @@ namespace AutomaticDoorSystem.Editor
             }
 
             DrawActions();
+        }
+
+        // Original routing of the source while the debug bypass is active, so it can be restored.
+        private AudioSource _bypassedSource;
+        private UnityEngine.Audio.AudioMixerGroup _bypassedGroup;
+        private float _bypassedSpatialBlend;
+        private bool _bypassedSpatialize;
+
+        /// <summary>
+        /// The stage the chain checks cannot see: everything between a playing AudioSource and the
+        /// ear. Listener state (paused / volume 0 silences the whole game), where the source is
+        /// routed, and whether spatial processing is involved - plus a bypass toggle that pulls the
+        /// source out of the mixer and into 2D. Bypass audible + normal path silent = routing or
+        /// 3D processing; both silent = listener or global audio state.
+        /// </summary>
+        private void DrawOutputStage(AudioSource source)
+        {
+            var listeners = FindObjectsByType<AudioListener>(FindObjectsSortMode.None)
+                .Where(l => l.isActiveAndEnabled).ToList();
+            if (Row(listeners.Count == 1,
+                    listeners.Count == 1
+                        ? $"One active AudioListener, {Vector3.Distance(listeners[0].transform.position, source.transform.position):0.0}m from the source"
+                        : $"{listeners.Count} active AudioListener(s) in the scene",
+                    listeners.Count == 0
+                        ? "No active AudioListener - nothing in the game is audible."
+                        : "Multiple listeners - Unity uses an arbitrary one, so 3D audio positions are unreliable.")
+                && listeners.Count == 1)
+            {
+                Row(!AudioListener.pause && AudioListener.volume > 0.01f,
+                    $"Listener state ok (pause {AudioListener.pause}, global volume {AudioListener.volume:0.00})",
+                    "AudioListener.pause / AudioListener.volume is silencing the ENTIRE game - some system " +
+                    "(pause menu, scenario) set it and did not restore it.");
+            }
+
+            string groupLabel = source.outputAudioMixerGroup != null
+                ? $"mixer group '{source.outputAudioMixerGroup.name}' ({source.outputAudioMixerGroup.audioMixer.name})"
+                : "no mixer group (direct out)";
+            string spatializer = string.IsNullOrEmpty(AudioSettings.GetSpatializerPluginName())
+                ? "none" : AudioSettings.GetSpatializerPluginName();
+            EditorGUILayout.HelpBox(
+                $"Output: {groupLabel}  |  spatialBlend {source.spatialBlend:0.00}  |  " +
+                $"spatialize {source.spatialize} (plugin: {spatializer})\n" +
+                "Snapshot transitions or an attenuated parent group can silence this route even though the " +
+                "source itself is playing at full volume.",
+                MessageType.None);
+
+            bool bypassActive = _bypassedSource == source;
+            var label = bypassActive
+                ? "Restore normal routing (bypass is ON)"
+                : "Debug bypass: play in 2D without the mixer";
+            if (GUILayout.Button(label))
+            {
+                if (bypassActive)
+                {
+                    source.outputAudioMixerGroup = _bypassedGroup;
+                    source.spatialBlend = _bypassedSpatialBlend;
+                    source.spatialize = _bypassedSpatialize;
+                    _bypassedSource = null;
+                }
+                else
+                {
+                    _bypassedSource = source;
+                    _bypassedGroup = source.outputAudioMixerGroup;
+                    _bypassedSpatialBlend = source.spatialBlend;
+                    _bypassedSpatialize = source.spatialize;
+                    source.outputAudioMixerGroup = null;
+                    source.spatialBlend = 0f;
+                    source.spatialize = false;
+                }
+            }
+
+            if (bypassActive)
+            {
+                EditorGUILayout.HelpBox(
+                    "Bypass active: the source plays 2D, straight to the output. Fire a test event below - " +
+                    "audible now but not before means the mixer route or 3D/spatializer processing eats the " +
+                    "sound; still silent means the listener or global audio state. Restore before ending the test.",
+                    MessageType.Warning);
+            }
         }
 
         private void DrawDoorState(DoorDataBridge.DoorInfo info)
