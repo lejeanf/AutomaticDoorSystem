@@ -22,7 +22,7 @@ namespace AutomaticDoorSystem.Editor
         private int _doorId;
         private Vector2 _scroll;
 
-        [MenuItem("Tools/AutomaticDoorSystem/Door Audio Doctor")]
+        [MenuItem("Tools/Jeanf/AutomaticDoorSystem/Door Audio Doctor")]
         public static void Open()
         {
             var window = GetWindow<DoorAudioDoctorWindow>("Door Audio Doctor");

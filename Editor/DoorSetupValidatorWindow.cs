@@ -34,7 +34,7 @@ namespace AutomaticDoorSystem.Editor
         private Vector2 _scroll;
         private bool _hasRun;
 
-        [MenuItem("Tools/AutomaticDoorSystem/Setup Validator")]
+        [MenuItem("Tools/Jeanf/AutomaticDoorSystem/Setup Validator")]
         public static void Open()
         {
             var window = GetWindow<DoorSetupValidatorWindow>("Door Setup");
