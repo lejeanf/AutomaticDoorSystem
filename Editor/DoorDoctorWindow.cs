@@ -452,8 +452,8 @@ namespace AutomaticDoorSystem.Editor
             if (em.HasComponent<WorldRenderBounds>(entity))
             {
                 var aabb = em.GetComponentData<WorldRenderBounds>(entity).Value;
-                min = Vector3.Min(min, aabb.Min);
-                max = Vector3.Max(max, aabb.Max);
+                min = Vector3.Min(min, (Vector3)aabb.Min);
+                max = Vector3.Max(max, (Vector3)aabb.Max);
                 found = true;
             }
 

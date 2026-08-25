@@ -8,6 +8,7 @@
         "Unity.Entities.Graphics",
         "Unity.Collections",
         "Unity.Mathematics",
+        "Unity.Mathematics.Extensions",
         "Unity.Transforms",
         "Unity.Scenes",
         "Unity.Scenes.Editor",
