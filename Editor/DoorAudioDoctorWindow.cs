@@ -315,6 +315,21 @@ namespace AutomaticDoorSystem.Editor
                 "source itself is playing at full volume.",
                 MessageType.None);
 
+            // The mixer-wide mute: MixerManager parks the whole mixer on the Muted snapshot
+            // (Master at -80 dB) during loads and region changes. If the unmute signal is missed,
+            // EVERY mixer-routed sound is silent while every per-source check stays green - the
+            // exact "all green but silent" case.
+            var mixerManager = FindFirstObjectByType<MixerManager>();
+            if (mixerManager != null)
+            {
+                Row(!mixerManager.IsCurrentlyMuted,
+                    "MixerManager: mixer is unmuted",
+                    "MixerManager reports the mixer is MUTED (snapshot with Master at -80 dB) - every sound " +
+                    "routed through the mixer is silent, doors included. The unmute normally fires after " +
+                    "region loading completes; if this persists, the load-complete signal was missed " +
+                    "(audiosystems >= 0.5.1 unmutes on a fallback timeout).");
+            }
+
             var steamManager = FindFirstObjectByType<SteamAudio.SteamAudioManager>();
             Row(steamManager != null || !source.spatialize,
                 steamManager != null

@@ -12,6 +12,7 @@
         "Unity.Scenes.Editor",
         "jeanf.scenemanagement",
         "jeanf.propertyDrawer",
+        "jeanf.audiosystems",
         "SteamAudioUnity"
     ],
     "includePlatforms": [
