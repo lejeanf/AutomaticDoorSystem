@@ -58,6 +58,11 @@ namespace AutomaticDoorSystem.Editor
             var door = target as DoorAuthoring;
             _pivotWarnings = DoorPivotAnalysis.Analyze(door);
 
+            // Panel-collider checks (same helper the Setup Validator runs, so the two surfaces
+            // never disagree): missing boxes, obliquely-rotated boxes, stale-bake tells.
+            _colliderFindings.Clear();
+            if (door != null) DoorColliderChecks.Analyze(door, _colliderFindings);
+
             if (logToConsole && door != null && _pivotWarnings.Count > 0)
             {
                 Debug.LogWarning(
@@ -67,6 +72,8 @@ namespace AutomaticDoorSystem.Editor
                     "inspector before changing the setup.", door.gameObject);
             }
         }
+
+        private readonly List<DoorColliderChecks.Finding> _colliderFindings = new List<DoorColliderChecks.Finding>();
 
         public override void OnInspectorGUI()
         {
@@ -312,23 +319,50 @@ namespace AutomaticDoorSystem.Editor
         private void DrawPivotCheckSection()
         {
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Pivot & Orientation Check", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Pivot, Orientation & Collider Check", EditorStyles.boldLabel);
             if (GUILayout.Button("Re-run", GUILayout.Width(60)))
             {
                 RefreshPivotWarnings(logToConsole: false);
             }
             EditorGUILayout.EndHorizontal();
 
-            if (_pivotWarnings == null || _pivotWarnings.Count == 0)
+            var pivotClean = _pivotWarnings == null || _pivotWarnings.Count == 0;
+            var collidersClean = _colliderFindings.Count == 0;
+
+            if (pivotClean && collidersClean)
             {
-                EditorGUILayout.HelpBox("No pivot or orientation issues detected.", MessageType.None);
+                EditorGUILayout.HelpBox("No pivot, orientation or panel-collider issues detected.", MessageType.None);
                 return;
             }
 
-            EditorGUILayout.HelpBox(
-                "Possible pivot/orientation issues (heuristics â€” confirm with the test buttons below " +
-                "before changing anything):\n\nâ€¢ " + string.Join("\n\nâ€¢ ", _pivotWarnings),
-                MessageType.Warning);
+            if (!pivotClean)
+            {
+                EditorGUILayout.HelpBox(
+                    "Possible pivot/orientation issues (heuristics â€” confirm with the test buttons below " +
+                    "before changing anything):\n\nâ€¢ " + string.Join("\n\nâ€¢ ", _pivotWarnings),
+                    MessageType.Warning);
+            }
+
+            foreach (var finding in _colliderFindings)
+            {
+                EditorGUILayout.HelpBox(finding.Message,
+                    finding.Level == DoorColliderChecks.Level.Warning ? MessageType.Warning : MessageType.Info);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    GUILayout.FlexibleSpace();
+                    if (finding.Fix != null && GUILayout.Button(finding.FixLabel, GUILayout.Width(220)))
+                    {
+                        finding.Fix();
+                        RefreshPivotWarnings(logToConsole: false);
+                        GUIUtility.ExitGUI(); // findings list just changed - stop drawing stale rows
+                    }
+                    if (finding.Context != null && GUILayout.Button("Select", GUILayout.Width(80)))
+                    {
+                        Selection.activeObject = finding.Context;
+                        EditorGUIUtility.PingObject(finding.Context);
+                    }
+                }
+            }
         }
 
         private void DrawEditModeTestSection(DoorConfig doorConfig, bool isDouble)

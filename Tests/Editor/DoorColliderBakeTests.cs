@@ -63,7 +63,7 @@ namespace AutomaticDoorSystem.Tests
         }
 
         [Test]
-        public void RotatedChild_SwapsSizeAxesAndReportsAngle()
+        public void RotatedChild_SwapsSizeAxesWithoutBloat()
         {
             var panelPosition = Vector3.zero;
             var panelRotation = Quaternion.identity;
@@ -76,11 +76,27 @@ namespace AutomaticDoorSystem.Tests
 
             AssertNear(new Vector3(0.1f, 2.5f, 1f), size, "size (axes swapped)");
             Assert.That(angle, Is.EqualTo(90f).Within(0.01f));
-            Assert.That(angle, Is.GreaterThan(DoorColliderBake.RotationBloatWarnDegrees));
+            // Right-angle rotations reproduce exactly - the tooling must NOT warn on them
+            // (a right panel is routinely the left one turned 180 degrees).
+            Assert.That(DoorColliderBake.BloatRatio(size, authoredSize),
+                Is.EqualTo(1f).Within(0.001f));
         }
 
         [Test]
-        public void DiagonallyRotatedChild_BakesConservativeEnclosingBox()
+        public void HalfTurnRotatedChild_ReproducesExactly()
+        {
+            var authoredSize = new Vector3(0.944f, 2.194f, 0.06f);
+            DoorColliderBake.DescribeInPanelFrame(
+                Vector3.zero, Quaternion.identity, Vector3.zero, Quaternion.Euler(0f, 180f, 0f), authoredSize,
+                out _, out var size, out _);
+
+            AssertNear(authoredSize, size, "size (180 degrees is shape-identical)");
+            Assert.That(DoorColliderBake.BloatRatio(size, authoredSize),
+                Is.EqualTo(1f).Within(0.001f));
+        }
+
+        [Test]
+        public void DiagonallyRotatedChild_BakesConservativeEnclosingBoxAndWarns()
         {
             var authoredSize = new Vector3(1f, 1f, 1f);
             DoorColliderBake.DescribeInPanelFrame(
@@ -91,6 +107,8 @@ namespace AutomaticDoorSystem.Tests
             Assert.That(size.x, Is.EqualTo(Mathf.Sqrt(2f)).Within(Epsilon));
             Assert.That(size.z, Is.EqualTo(Mathf.Sqrt(2f)).Within(Epsilon));
             Assert.That(size.y, Is.EqualTo(1f).Within(Epsilon));
+            Assert.That(DoorColliderBake.BloatRatio(size, authoredSize),
+                Is.GreaterThan(DoorColliderBake.BloatWarnRatio));
         }
 
         [Test]

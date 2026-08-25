@@ -20,11 +20,22 @@ namespace AutomaticDoorSystem
     public static class DoorColliderBake
     {
         /// <summary>
-        /// A collider node rotated more than this relative to the panel pivot cannot be reproduced
-        /// as an axis-aligned box in the panel frame - the bake falls back to the enclosing AABB,
-        /// which is bigger than authored, and the tooling warns.
+        /// A baked box more than this factor larger (by volume) than the authored one gets a
+        /// warning. Right-angle rotations (a right panel authored as the left one turned 180°)
+        /// reproduce exactly and stay silent; only oblique rotations actually bloat the AABB.
         /// </summary>
-        public const float RotationBloatWarnDegrees = 5f;
+        public const float BloatWarnRatio = 1.05f;
+
+        /// <summary>
+        /// How much bigger (by volume) the baked panel-frame AABB is than the authored world box.
+        /// 1 = exact reproduction; 2 = a box rotated 45° around one axis.
+        /// </summary>
+        public static float BloatRatio(float3 bakedSize, Vector3 authoredWorldSize)
+        {
+            var authoredVolume = authoredWorldSize.x * authoredWorldSize.y * authoredWorldSize.z;
+            if (authoredVolume <= 1e-12f) return 1f;
+            return bakedSize.x * bakedSize.y * bakedSize.z / authoredVolume;
+        }
 
         /// <summary>The authored box's world-space center (child transform applied).</summary>
         public static Vector3 WorldCenter(BoxCollider box) => box.transform.TransformPoint(box.center);

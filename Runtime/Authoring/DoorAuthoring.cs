@@ -774,14 +774,16 @@ namespace AutomaticDoorSystem
                     // silently drops (the collider then lands mirrored across the hinge at runtime,
                     // while edit mode - which uses the child's real transform - looks perfect).
                     // Fold the whole chain into the panel frame instead.
+                    var worldSize = DoorColliderBake.WorldSize(boxCollider);
                     DoorColliderBake.DescribeInPanelFrame(
                         panelTransform.position, panelTransform.rotation,
                         DoorColliderBake.WorldCenter(boxCollider),
                         boxCollider.transform.rotation,
-                        DoorColliderBake.WorldSize(boxCollider),
+                        worldSize,
                         out var center, out var size, out var relativeAngle);
 
-                    if (relativeAngle > DoorColliderBake.RotationBloatWarnDegrees)
+                    // Right-angle rotations reproduce exactly (ratio 1); only oblique ones bloat.
+                    if (DoorColliderBake.BloatRatio(size, worldSize) > DoorColliderBake.BloatWarnRatio)
                     {
                         Debug.LogWarning(
                             $"[DoorBaker] Panel '{panelTransform.name}': its BoxCollider (on '{boxCollider.name}') is " +
