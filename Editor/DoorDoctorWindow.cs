@@ -148,6 +148,19 @@ namespace AutomaticDoorSystem.Editor
             Row(Camera.main != null, "Camera.main found (both pools cull by distance to it)",
                 "No enabled MainCamera - neither pool ever activates anything.");
 
+            var audioPool = AudioSourcePoolManager.Instance;
+            if (audioPool != null)
+            {
+                // The door pool's share of Steam Audio's game-wide reflection-source cap
+                // ("Simulating reflections for N sources, which is more than the max").
+                audioPool.GetSteamAudioLoad(out int simulated, out int reflecting);
+                EditorGUILayout.HelpBox(
+                    $"Steam Audio load from this pool: {simulated}/{audioPool.maxPoolSize} pooled source(s) in the " +
+                    $"simulator, {reflecting} in the reflections pass (reflections culled beyond " +
+                    $"{audioPool.reflectionsCullingDistance:0}m; unassigned slots are fully disabled).",
+                    MessageType.None);
+            }
+
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Baked world census", EditorStyles.boldLabel);
             DrawWorldCensus(world.EntityManager, dataBridge);
@@ -603,6 +616,22 @@ namespace AutomaticDoorSystem.Editor
                     $"enabled {slotSource.isActiveAndEnabled}, playing {slotSource.isPlaying})",
                     "The pooled source is muted, at volume 0 or disabled - it may still be fading in, or was " +
                     "deactivated by the pool.");
+
+                // Reflections are distance-culled by the pool (Steam Audio caps reflection sources
+                // game-wide), so "off" beyond the radius is the healthy state, not a fault.
+                var steamSource = slotSource.GetComponent<SteamAudio.SteamAudioSource>();
+                if (steamSource != null && cam != null)
+                {
+                    float reflDistance = Vector3.Distance(cam.transform.position, info.audioPosition);
+                    bool inReflectionsRange = reflDistance <= pool.reflectionsCullingDistance;
+                    Row(steamSource.reflections == inReflectionsRange || !steamSource.reflections,
+                        steamSource.reflections
+                            ? $"Steam Audio reflections ON ({reflDistance:0.0}m of {pool.reflectionsCullingDistance:0.0}m reflections range)"
+                            : $"Steam Audio reflections culled ({reflDistance:0.0}m > {pool.reflectionsCullingDistance:0.0}m - direct sound only" +
+                              ", or disabled in the audio config)",
+                        "Reflections are ON for a door beyond the reflections culling distance - the pool's " +
+                        $"distance check (every {pool.distanceCheckInterval:0.0}s) should cull it; if this persists, report it.");
+                }
             }
 
             // --- output stage: listener, routing, spatial processing ---

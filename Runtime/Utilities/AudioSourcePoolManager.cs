@@ -35,6 +35,12 @@ namespace AutomaticDoorSystem
         [Range(5f, 100f)]
         public float cullingDistance = 25f;
 
+        [Tooltip("Doors farther than this stop simulating Steam Audio reflections (default: 15m). " +
+            "Steam Audio has a hard game-wide cap on simultaneous reflection sources, so keep this tight - " +
+            "the AudioSource itself stays parked and audible up to Culling Distance.")]
+        [Range(2f, 50f)]
+        public float reflectionsCullingDistance = 15f;
+
         [Tooltip("Frequency of distance checks in seconds (default: 0.5s)")]
         [Range(0.1f, 2f)]
         public float distanceCheckInterval = 0.5f;
@@ -80,6 +86,7 @@ namespace AutomaticDoorSystem
             public float targetVolume;
             public Coroutine fadeCoroutine;
             public bool isPlayingAudio;
+            public bool configWantsReflections;
         }
 
         #endregion
@@ -195,12 +202,16 @@ namespace AutomaticDoorSystem
                     assignedDoorNumber = -1,
                     targetVolume = 1f,
                     fadeCoroutine = null,
-                    isPlayingAudio = false
+                    isPlayingAudio = false,
+                    configWantsReflections = false
                 };
 
-                audioSourceObj.SetActive(true);
                 audioSource.volume = 0f;
                 audioSource.mute = true;
+                // Parked INACTIVE: an enabled SteamAudioSource registers with the Steam Audio
+                // simulator whether or not anything is playing, and its reflections pass has a
+                // hard game-wide source cap. A slot only goes active while assigned to a door.
+                audioSourceObj.SetActive(false);
             }
         }
 
@@ -319,7 +330,7 @@ namespace AutomaticDoorSystem
 
                 if (bridge.TryGetDoorInfo(doorId, out var doorInfo) && doorInfo.audioConfig != null)
                 {
-                    ActivateAudioSourceForDoor(i, doorInfo);
+                    ActivateAudioSourceForDoor(i, doorInfo, playerPosition);
                 }
                 else
                 {
@@ -330,20 +341,27 @@ namespace AutomaticDoorSystem
             }
         }
 
-        private void ActivateAudioSourceForDoor(int poolIndex, DoorDataBridge.DoorInfo doorInfo)
+        private void ActivateAudioSourceForDoor(int poolIndex, DoorDataBridge.DoorInfo doorInfo, Vector3 playerPosition)
         {
             PooledAudioSourceState state = _poolStates[poolIndex];
             if (state.audioSource == null) return;
 
+            if (!state.audioSource.gameObject.activeSelf)
+            {
+                state.audioSource.gameObject.SetActive(true);
+            }
+
             if (state.isPlayingAudio && state.audioSource.isPlaying)
             {
                 state.audioSource.transform.position = doorInfo.audioPosition;
+                ApplyReflectionsCulling(state, doorInfo.audioPosition, playerPosition);
                 return;
             }
 
             if (state.assignedDoorNumber == doorInfo.doorId)
             {
                 state.audioSource.transform.position = doorInfo.audioPosition;
+                ApplyReflectionsCulling(state, doorInfo.audioPosition, playerPosition);
 
                 if (DoorAudioBridge.Instance != null)
                 {
@@ -366,7 +384,12 @@ namespace AutomaticDoorSystem
                 config.ApplyToSteamAudioSource(state.steamAudioSource);
             }
 
+            // Remember what the config asked for, so distance culling can restore reflections
+            // when the door comes close again without forcing them on config-disabled doors.
+            state.configWantsReflections = config.useSteamAudio && config.reflections;
+
             state.audioSource.transform.position = doorInfo.audioPosition;
+            ApplyReflectionsCulling(state, doorInfo.audioPosition, playerPosition);
 
             if (state.fadeCoroutine != null)
             {
@@ -475,8 +498,29 @@ namespace AutomaticDoorSystem
             if (state.audioSource != null)
             {
                 state.audioSource.gameObject.name = $"PooledAudioSource_{poolIndex:D2}";
+                // Unassigned = out of the Steam Audio simulator entirely (see InitializePool).
+                state.audioSource.gameObject.SetActive(false);
             }
             _poolStates[poolIndex] = state;
+        }
+
+        /// <summary>
+        /// Steam Audio's reflections pass has a hard game-wide cap on simultaneous sources
+        /// ("Simulating reflections for N sources, which is more than the max"). Reflections are
+        /// inaudible from far doors anyway, so only sources within
+        /// <see cref="reflectionsCullingDistance"/> keep the flag their config asked for.
+        /// </summary>
+        private void ApplyReflectionsCulling(in PooledAudioSourceState state, Vector3 doorPosition, Vector3 playerPosition)
+        {
+            if (state.steamAudioSource == null) return;
+
+            bool wantReflections = state.configWantsReflections &&
+                Vector3.Distance(doorPosition, playerPosition) <= reflectionsCullingDistance;
+
+            if (state.steamAudioSource.reflections != wantReflections)
+            {
+                state.steamAudioSource.reflections = wantReflections;
+            }
         }
 
         #endregion
@@ -557,6 +601,31 @@ namespace AutomaticDoorSystem
             return count;
         }
 
+        /// <summary>
+        /// Pooled sources currently registered with the Steam Audio simulator (active GameObjects)
+        /// and, of those, how many are in the reflections pass. Diagnostic (Door Doctor) - each
+        /// reflection source counts against Steam Audio's game-wide cap.
+        /// </summary>
+        public void GetSteamAudioLoad(out int simulatedSources, out int reflectionSources)
+        {
+            simulatedSources = 0;
+            reflectionSources = 0;
+
+            if (_poolStates == null) return;
+
+            for (int i = 0; i < _poolStates.Length; i++)
+            {
+                var state = _poolStates[i];
+                if (state.audioSource == null || !state.audioSource.gameObject.activeInHierarchy) continue;
+
+                if (state.steamAudioSource != null)
+                {
+                    simulatedSources++;
+                    if (state.steamAudioSource.reflections) reflectionSources++;
+                }
+            }
+        }
+
         #endregion
 
         #region Debug
@@ -567,6 +636,9 @@ namespace AutomaticDoorSystem
 
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(_cameraTransform.position, cullingDistance);
+
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(_cameraTransform.position, reflectionsCullingDistance);
 
             if (_poolStates == null) return;
 
