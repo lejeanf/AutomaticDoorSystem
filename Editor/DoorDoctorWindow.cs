@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using AutomaticDoorSystem.Utilities;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Rendering;
 using Unity.Scenes;
 using Unity.Transforms;
 using UnityEditor;
@@ -255,10 +256,13 @@ namespace AutomaticDoorSystem.Editor
             var dataBridge = DoorDataBridge.Instance;
             var pool = BoxColliderPoolManager.Instance;
             var cam = Camera.main;
+            var world = World.DefaultGameObjectInjectionWorld;
 
             if (!Row(dataBridge != null, "DoorDataBridge present", "No DoorDataBridge - the pool has nothing to read.")) return;
             if (!Row(pool != null, "BoxColliderPoolManager present", "No BoxColliderPoolManager - no pooled colliders exist.")) return;
             if (!Row(cam != null, "Camera.main found (pool culls by distance to it)", "No enabled MainCamera - the pool never activates any collider.")) return;
+            if (world == null || !world.IsCreated) return;
+            var em = world.EntityManager;
 
             var camPos = cam.transform.position;
             var slots = ReadColliderSlots(pool);
@@ -342,6 +346,34 @@ namespace AutomaticDoorSystem.Editor
                               (door.isLocked ? " (door locked: colliders hold position by design)" : "");
                 }
 
+                // Alignment: the assigned colliders must sit ON the rendered panels. Compares each
+                // enabled slot's world bounds against the panel subtree's WorldRenderBounds - an
+                // independent source of truth, so it catches stale bakes (child-local centers baked
+                // raw by package < 2.14.0 land mirrored across the hinge) and any future pose bug.
+                var misalignments = new List<string>();
+                if (panelsOk && doorSlots != null)
+                {
+                    foreach (var s in doorSlots)
+                    {
+                        if (!s.ColliderEnabled || s.Collider == null) continue;
+                        if (s.PanelIndex < 0 || s.PanelIndex >= panelCount) continue;
+                        if (!TryGetPanelRenderBounds(em, panels[s.PanelIndex].panelEntity, out var meshBounds)) continue;
+
+                        var delta = s.Collider.bounds.center - meshBounds.center;
+                        if (delta.magnitude > ColliderAlignmentTolerance)
+                            misalignments.Add($"panel {s.PanelIndex} (slot {s.PoolIndex}): collider is {delta.magnitude:0.00}m " +
+                                              $"from the rendered mesh (delta {delta})");
+                    }
+                }
+                if (misalignments.Count > 0)
+                {
+                    verdict = "collider(s) MISALIGNED with the rendered panels - " + string.Join("; ", misalignments) +
+                              ". Most likely a stale bake: the panel's BoxCollider lives on a child node and this " +
+                              "subscene was baked before the panel-frame fix (package 2.14.0). Re-import (re-bake) " +
+                              "the door's subscene; if it persists, run the Setup Validator on the door prefab.";
+                    type = MessageType.Error;
+                }
+
                 if (_collidersOnlyProblems && type == MessageType.None) continue;
 
                 var marker = door.doorId == _doorId ? "> " : "   ";
@@ -368,6 +400,7 @@ namespace AutomaticDoorSystem.Editor
             public int PanelIndex;
             public bool ColliderEnabled;
             public Vector3 Position;
+            public BoxCollider Collider;
         }
 
         private static List<ColliderSlotInfo> ReadColliderSlots(BoxColliderPoolManager pool)
@@ -383,9 +416,54 @@ namespace AutomaticDoorSystem.Editor
                     PanelIndex = panelIndex,
                     ColliderEnabled = collider != null && collider.enabled,
                     Position = collider != null ? collider.transform.position : Vector3.zero,
+                    Collider = collider,
                 });
             }
             return result;
+        }
+
+        /// <summary>
+        /// A pooled collider farther than this from the panel's rendered bounds is reported as
+        /// misaligned. Generous enough to swallow the one-physics-tick MovePosition lag of an
+        /// animating door; the historical failure this catches (child-local center baked raw,
+        /// mirroring the box across the hinge) is a full door width, ~1 m.
+        /// </summary>
+        private const float ColliderAlignmentTolerance = 0.25f;
+
+        /// <summary>
+        /// World AABB of everything the panel entity renders (its own WorldRenderBounds plus all
+        /// descendants'). This is ground truth for "where the door visually is", independent of
+        /// the collider math being checked.
+        /// </summary>
+        private static bool TryGetPanelRenderBounds(EntityManager em, Entity panel, out Bounds bounds)
+        {
+            var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+            var found = false;
+            AccumulateRenderBounds(em, panel, ref min, ref max, ref found, 0);
+            bounds = found ? new Bounds((min + max) * 0.5f, max - min) : default;
+            return found;
+        }
+
+        private static void AccumulateRenderBounds(EntityManager em, Entity entity, ref Vector3 min, ref Vector3 max, ref bool found, int depth)
+        {
+            if (depth > 8 || entity == Entity.Null || !em.Exists(entity)) return;
+
+            if (em.HasComponent<WorldRenderBounds>(entity))
+            {
+                var aabb = em.GetComponentData<WorldRenderBounds>(entity).Value;
+                min = Vector3.Min(min, aabb.Min);
+                max = Vector3.Max(max, aabb.Max);
+                found = true;
+            }
+
+            if (!em.HasBuffer<Child>(entity)) return;
+            // Copy before recursing: nested GetBuffer calls invalidate the handle.
+            var buffer = em.GetBuffer<Child>(entity, true);
+            var children = new List<Entity>(buffer.Length);
+            for (var i = 0; i < buffer.Length; i++) children.Add(buffer[i].Value);
+            foreach (var child in children)
+                AccumulateRenderBounds(em, child, ref min, ref max, ref found, depth + 1);
         }
 
         // ---------------------------------------------------------------------------------------

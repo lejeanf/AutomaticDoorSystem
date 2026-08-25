@@ -5,6 +5,7 @@
         "AutomaticDoorSystem",
         "Unity.Entities",
         "Unity.Entities.Hybrid",
+        "Unity.Entities.Graphics",
         "Unity.Collections",
         "Unity.Mathematics",
         "Unity.Transforms",

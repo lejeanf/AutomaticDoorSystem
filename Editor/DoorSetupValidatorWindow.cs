@@ -603,16 +603,63 @@ namespace AutomaticDoorSystem.Editor
         private void CheckPanelCollider(List<Check> checks, DoorAuthoring door, Transform panel, string which)
         {
             if (panel == null) return;
-            if (panel.GetComponentInChildren<BoxCollider>() != null) return;
 
-            checks.Add(new Check
+            var box = panel.GetComponent<BoxCollider>();
+            if (box == null) box = panel.GetComponentInChildren<BoxCollider>();
+            if (box == null)
             {
-                Severity = Severity.Warning,
-                Message = $"Door '{door.gameObject.name}' (id {door.doorId}): the {which} panel " +
-                          $"'{panel.name}' has no BoxCollider. Baking copies its size onto the pooled collider, " +
-                          "so without one the panel falls back to a generic 1 x 2.5 x 0.1 box.",
-                Context = panel
-            });
+                checks.Add(new Check
+                {
+                    Severity = Severity.Warning,
+                    Message = $"Door '{door.gameObject.name}' (id {door.doorId}): the {which} panel " +
+                              $"'{panel.name}' has no BoxCollider. Baking copies its size onto the pooled collider, " +
+                              "so without one the panel falls back to a generic 1 x 2.5 x 0.1 box.",
+                    Context = panel
+                });
+                return;
+            }
+
+            // Mirror of the baker's alignment handling: reproduce the box in the panel-pivot frame
+            // (what the pooled proxy uses at runtime) and flag anything the runtime cannot express.
+            DoorColliderBake.DescribeInPanelFrame(
+                panel.position, panel.rotation,
+                DoorColliderBake.WorldCenter(box), box.transform.rotation, DoorColliderBake.WorldSize(box),
+                out _, out _, out var relativeAngle);
+
+            if (relativeAngle > DoorColliderBake.RotationBloatWarnDegrees)
+            {
+                checks.Add(new Check
+                {
+                    Severity = Severity.Warning,
+                    Message = $"Door '{door.gameObject.name}' (id {door.doorId}): the {which} panel's BoxCollider " +
+                              $"(on '{box.name}') is rotated {relativeAngle:0}° relative to the panel pivot. The " +
+                              "pooled runtime collider is an axis-aligned box in the panel's frame, so it bakes as " +
+                              "the enclosing (larger) box. Align the collider's node with the panel pivot for an " +
+                              "exact fit.",
+                    Context = box
+                });
+            }
+
+            // Doors baked before the panel-frame fix (package < 2.14.0) carry the raw child-local
+            // center - flag the setups where that old math visibly misplaced the collider, so a
+            // stale bake is recognizable from authoring data alone.
+            if (box.transform != panel)
+            {
+                var childOffset = panel.InverseTransformPoint(box.transform.position);
+                if (childOffset.magnitude > 0.05f)
+                {
+                    checks.Add(new Check
+                    {
+                        Severity = Severity.Info,
+                        Message = $"Door '{door.gameObject.name}' (id {door.doorId}): the {which} panel's BoxCollider " +
+                                  $"lives on child '{box.name}' at local offset {childOffset}. Handled correctly since " +
+                                  "package 2.14.0 - but a subscene baked with an older version places this collider " +
+                                  "on the wrong side of the hinge. If the Door Doctor reports a misaligned collider " +
+                                  "for this door, re-import (re-bake) its subscene.",
+                        Context = box
+                    });
+                }
+            }
         }
 
         /// <summary>

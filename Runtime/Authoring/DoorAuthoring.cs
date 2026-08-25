@@ -766,11 +766,31 @@ namespace AutomaticDoorSystem
                 if (boxCollider != null)
                 {
                     DependsOn(boxCollider);
-                    return (
-                        new float3(boxCollider.size.x, boxCollider.size.y, boxCollider.size.z),
-                        new float3(boxCollider.center.x, boxCollider.center.y, boxCollider.center.z),
-                        1
-                    );
+                    DependsOn(boxCollider.transform);
+
+                    // The pooled proxy reproduces this box at the PANEL pivot's position+rotation,
+                    // scale 1 - but door models author the BoxCollider on the mesh child under the
+                    // animated CTRL node, whose local offset/rotation/scale a raw center/size copy
+                    // silently drops (the collider then lands mirrored across the hinge at runtime,
+                    // while edit mode - which uses the child's real transform - looks perfect).
+                    // Fold the whole chain into the panel frame instead.
+                    DoorColliderBake.DescribeInPanelFrame(
+                        panelTransform.position, panelTransform.rotation,
+                        DoorColliderBake.WorldCenter(boxCollider),
+                        boxCollider.transform.rotation,
+                        DoorColliderBake.WorldSize(boxCollider),
+                        out var center, out var size, out var relativeAngle);
+
+                    if (relativeAngle > DoorColliderBake.RotationBloatWarnDegrees)
+                    {
+                        Debug.LogWarning(
+                            $"[DoorBaker] Panel '{panelTransform.name}': its BoxCollider (on '{boxCollider.name}') is " +
+                            $"rotated {relativeAngle:0}° relative to the panel pivot. The pooled collider can only be " +
+                            "an axis-aligned box in the panel's frame, so the enclosing (larger) box is baked. Align " +
+                            "the collider's node with the panel pivot for an exact fit.", boxCollider);
+                    }
+
+                    return (size, center, 1);
                 }
 
                 return (new float3(1f, 2.5f, 0.1f), new float3(0.5f, 1.25f, 0f), 0);
