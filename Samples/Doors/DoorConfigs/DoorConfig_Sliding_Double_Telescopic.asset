@@ -21,7 +21,7 @@ MonoBehaviour:
   slideOpenOffset: {x: -2, y: 0, z: 0}
   slidingStyle: 1
   rightSlideOpenOffset: {x: -4, y: 0, z: 0}
-  openRightDoorOnly: 1
+  openRightDoorOnly: 0
   animationDuration: 1.5
   autoCloseDelay: 3
   canOpenLayerMask:

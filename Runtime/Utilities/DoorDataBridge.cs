@@ -278,14 +278,22 @@ namespace AutomaticDoorSystem.Utilities
         {
             info = default;
 
-            if (_entityManager == null || !_doorEntityCache.TryGetValue(doorId, out Entity doorEntity))
+            if (_entityManager == null)
             {
                 return false;
             }
 
-            if (!_entityManager.HasComponent<DoorComponent>(doorEntity))
+            // Subscenes stream in and out (elevators load per floor), so a cached Entity handle
+            // can be dead by the time it is used - and the timed refresh does not run while the
+            // editor is paused. A stale hit triggers one immediate refresh so the lookup answers
+            // from live data instead of failing until the next timer tick.
+            if (!TryGetLiveDoorEntity(doorId, out Entity doorEntity))
             {
-                return false;
+                RefreshAllDoorInfoCache();
+                if (!TryGetLiveDoorEntity(doorId, out doorEntity))
+                {
+                    return false;
+                }
             }
 
             var doorComponent = _entityManager.GetComponentData<DoorComponent>(doorEntity);
@@ -313,6 +321,14 @@ namespace AutomaticDoorSystem.Utilities
             };
 
             return true;
+        }
+
+        /// <summary>A cached entity for the id that is still alive and still a door.</summary>
+        private bool TryGetLiveDoorEntity(int doorId, out Entity doorEntity)
+        {
+            return _doorEntityCache.TryGetValue(doorId, out doorEntity)
+                   && _entityManager.Exists(doorEntity)
+                   && _entityManager.HasComponent<DoorComponent>(doorEntity);
         }
 
         /// <summary>

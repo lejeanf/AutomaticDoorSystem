@@ -126,8 +126,24 @@ namespace AutomaticDoorSystem.Editor
                     "id differs from the authoring (stale bake - re-bake the subscene), or baking skipped the " +
                     "door (missing DoorConfig)."))
             {
-                SubSceneDoorScanner.BakedDoorIds(out _, out var disabledIds);
-                if (disabledIds.Contains(_doorId))
+                CountLiveEntities(_doorId, out int liveEnabled, out int liveDisabled);
+                if (liveEnabled >= 2)
+                {
+                    EditorGUILayout.HelpBox(
+                        $"{liveEnabled} live door entities share id {_doorId}! The bridge's id-keyed lookup can " +
+                        "only serve one of them - the others get no colliders and no audio. Find and renumber " +
+                        "the duplicates (Setup Validator > Subscene bake lists which subscenes author this id).",
+                        MessageType.Error);
+                }
+                else if (liveEnabled == 1)
+                {
+                    EditorGUILayout.HelpBox(
+                        $"A live entity with id {_doorId} DOES exist - the bridge's cached handle was stale " +
+                        "(its subscene streamed out and back in). The bridge self-heals on lookup as of 2.12.0; " +
+                        "if this message persists, report it.",
+                        MessageType.Warning);
+                }
+                else if (liveDisabled > 0)
                 {
                     EditorGUILayout.HelpBox(
                         $"Door {_doorId} IS baked - but DISABLED: its authoring GameObject is inactive, so the " +
@@ -237,11 +253,15 @@ namespace AutomaticDoorSystem.Editor
             DrawActions();
         }
 
-        // Original routing of the source while the debug bypass is active, so it can be restored.
+        // Original routing of the source while a debug bypass is active, so it can be restored.
+        // Two independent toggles: mixer-only and spatial-only, so the silent layer can be
+        // pinpointed instead of lumping both into one switch.
         private AudioSource _bypassedSource;
         private UnityEngine.Audio.AudioMixerGroup _bypassedGroup;
         private float _bypassedSpatialBlend;
         private bool _bypassedSpatialize;
+        private bool _mixerBypassOn;
+        private bool _spatialBypassOn;
 
         /// <summary>
         /// The stage the chain checks cannot see: everything between a playing AudioSource and the
@@ -269,6 +289,20 @@ namespace AutomaticDoorSystem.Editor
                     "(pause menu, scenario) set it and did not restore it.");
             }
 
+            // A spatialized voice without a SteamAudioSource has no component pushing per-source
+            // parameters into the Steam Audio Spatializer - the classic result is a source that
+            // "plays" at full volume yet renders silence.
+            if (source.spatialize)
+            {
+                bool hasSteamSource = source.GetComponent<SteamAudio.SteamAudioSource>() != null;
+                Row(hasSteamSource,
+                    "Spatialize is ON and a SteamAudioSource feeds the spatializer",
+                    "Spatialize is ON but the source has NO SteamAudioSource component - the Steam Audio " +
+                    "Spatializer gets no per-source parameters and typically renders SILENCE. Add a " +
+                    "SteamAudioSource to the pooled AudioSource prefab, or uncheck Spatialize on it to fall " +
+                    "back to plain Unity 3D panning.");
+            }
+
             string groupLabel = source.outputAudioMixerGroup != null
                 ? $"mixer group '{source.outputAudioMixerGroup.name}' ({source.outputAudioMixerGroup.audioMixer.name})"
                 : "no mixer group (direct out)";
@@ -281,38 +315,91 @@ namespace AutomaticDoorSystem.Editor
                 "source itself is playing at full volume.",
                 MessageType.None);
 
-            bool bypassActive = _bypassedSource == source;
-            var label = bypassActive
-                ? "Restore normal routing (bypass is ON)"
-                : "Debug bypass: play in 2D without the mixer";
-            if (GUILayout.Button(label))
+            var steamManager = FindFirstObjectByType<SteamAudio.SteamAudioManager>();
+            Row(steamManager != null || !source.spatialize,
+                steamManager != null
+                    ? "SteamAudioManager present (Steam Audio simulation running)"
+                    : "No SteamAudioManager needed (source not spatialized)",
+                "The source is spatialized through Steam Audio but no SteamAudioManager exists - the " +
+                "simulation (occlusion, HRTF) never runs and spatialized voices can render silence.");
+
+            // A source that changed hands invalidates any stored bypass state.
+            if (_bypassedSource != source && _bypassedSource != null)
             {
-                if (bypassActive)
+                _mixerBypassOn = false;
+                _spatialBypassOn = false;
+                _bypassedSource = null;
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                bool newMixer = GUILayout.Toggle(_mixerBypassOn, "Bypass mixer group", "Button");
+                bool newSpatial = GUILayout.Toggle(_spatialBypassOn, "Bypass 3D + spatializer", "Button");
+
+                if (newMixer != _mixerBypassOn)
                 {
-                    source.outputAudioMixerGroup = _bypassedGroup;
-                    source.spatialBlend = _bypassedSpatialBlend;
-                    source.spatialize = _bypassedSpatialize;
-                    _bypassedSource = null;
+                    if (newMixer)
+                    {
+                        CaptureOriginals(source);
+                        source.outputAudioMixerGroup = null;
+                    }
+                    else
+                    {
+                        source.outputAudioMixerGroup = _bypassedGroup;
+                    }
+                    _mixerBypassOn = newMixer;
+                    ReleaseIfRestored(source);
                 }
-                else
+
+                if (newSpatial != _spatialBypassOn)
                 {
-                    _bypassedSource = source;
-                    _bypassedGroup = source.outputAudioMixerGroup;
-                    _bypassedSpatialBlend = source.spatialBlend;
-                    _bypassedSpatialize = source.spatialize;
-                    source.outputAudioMixerGroup = null;
-                    source.spatialBlend = 0f;
-                    source.spatialize = false;
+                    if (newSpatial)
+                    {
+                        CaptureOriginals(source);
+                        source.spatialBlend = 0f;
+                        source.spatialize = false;
+                    }
+                    else
+                    {
+                        source.spatialBlend = _bypassedSpatialBlend;
+                        source.spatialize = _bypassedSpatialize;
+                    }
+                    _spatialBypassOn = newSpatial;
+                    ReleaseIfRestored(source);
                 }
             }
 
-            if (bypassActive)
+            if (_mixerBypassOn || _spatialBypassOn)
             {
                 EditorGUILayout.HelpBox(
-                    "Bypass active: the source plays 2D, straight to the output. Fire a test event below - " +
-                    "audible now but not before means the mixer route or 3D/spatializer processing eats the " +
-                    "sound; still silent means the listener or global audio state. Restore before ending the test.",
+                    (_mixerBypassOn && _spatialBypassOn
+                        ? "Both bypasses active - the source plays 2D straight to the output."
+                        : _mixerBypassOn
+                            ? "Mixer bypass active - 3D/spatializer processing still applies."
+                            : "Spatial bypass active (2D) - the mixer route still applies.") +
+                    " Fire a test event and toggle one at a time: the bypass that brings the sound back names " +
+                    "the layer that eats it. Spatializer-side silence usually means Steam Audio occlusion - the " +
+                    "source parks at the trigger-volume centre, INSIDE the doorway geometry, when the door has " +
+                    "no Audio Anchor; assign an anchor just outside the door plane or disable occlusion in the " +
+                    "DoorAudioConfiguration.",
                     MessageType.Warning);
+            }
+        }
+
+        private void CaptureOriginals(AudioSource source)
+        {
+            if (_bypassedSource == source) return;
+            _bypassedSource = source;
+            _bypassedGroup = source.outputAudioMixerGroup;
+            _bypassedSpatialBlend = source.spatialBlend;
+            _bypassedSpatialize = source.spatialize;
+        }
+
+        private void ReleaseIfRestored(AudioSource source)
+        {
+            if (!_mixerBypassOn && !_spatialBypassOn && _bypassedSource == source)
+            {
+                _bypassedSource = null;
             }
         }
 
@@ -571,6 +658,41 @@ namespace AutomaticDoorSystem.Editor
             string list = string.Join(", ", ids.Take(max));
             if (ids.Count > max) list += $", ... (+{ids.Count - max} more)";
             return $"{ids.Count} door id(s) currently loaded: {list}";
+        }
+
+        /// <summary>Live entity counts for one door id, straight from the world - no caches.</summary>
+        private static void CountLiveEntities(int doorId, out int enabled, out int disabled)
+        {
+            enabled = 0;
+            disabled = 0;
+
+            var world = World.DefaultGameObjectInjectionWorld;
+            if (world == null || !world.IsCreated) return;
+
+            using (var query = world.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<DoorComponent>()))
+            using (var doors = query.ToComponentDataArray<DoorComponent>(Unity.Collections.Allocator.Temp))
+            {
+                foreach (var door in doors)
+                {
+                    if (door.DoorId == doorId) enabled++;
+                }
+            }
+
+            var allDesc = new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<DoorComponent>() },
+                Options = EntityQueryOptions.IncludeDisabledEntities
+            };
+            using (var query = world.EntityManager.CreateEntityQuery(allDesc))
+            using (var doors = query.ToComponentDataArray<DoorComponent>(Unity.Collections.Allocator.Temp))
+            {
+                int total = 0;
+                foreach (var door in doors)
+                {
+                    if (door.DoorId == doorId) total++;
+                }
+                disabled = total - enabled;
+            }
         }
 
         /// <summary>Draws one check row; returns the check's result so callers can early-out.</summary>
