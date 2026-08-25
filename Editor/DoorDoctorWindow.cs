@@ -4,45 +4,61 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using AutomaticDoorSystem.Utilities;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Scenes;
+using Unity.Transforms;
 using UnityEditor;
 using UnityEngine;
 
 namespace AutomaticDoorSystem.Editor
 {
     /// <summary>
-    /// Play-mode diagnostics for one door's audio chain, link by link: door entity found ->
-    /// audio config baked -> within pool culling range -> no id/spacing conflict -> pool slot
-    /// assigned -> AudioSource registered on the bridge. Each link reports its live state, and
-    /// the test buttons fire a real DoorAudioEventComponent so the chain can be exercised
-    /// without walking an avatar into the trigger - if a test event plays, the audio chain is
-    /// healthy and the problem is detection/state; if it stays silent, the first red row is
-    /// the culprit. The static helpers also back the audio section on the DoorAuthoring
-    /// inspector, so the same checks are available right on the door.
+    /// Play-mode diagnostics for the whole door runtime, one tab per concern:
+    ///
+    /// - Overview: the managers, the baked-world census (duplicate ids, doors invisible to the
+    ///   bridge, disabled doors) and the selected door's live state + authoring locator. The
+    ///   generic checks every other tab depends on.
+    /// - Colliders: the pooled BoxCollider chain, fleet-wide. Surfaces the runtime's two SILENT
+    ///   failure paths: an empty bridge cache (it retries forever without logging) and a door
+    ///   whose panel buffer cannot be resolved (the pool skips it without a warning).
+    /// - Audio: the pooled AudioSource chain for one door, link by link, with test events and
+    ///   output-stage bypasses (formerly the Door Audio Doctor).
+    ///
+    /// The static helpers back the audio section on the DoorAuthoring inspector, so the same
+    /// checks are available right on the door.
     /// </summary>
-    public class DoorAudioDoctorWindow : EditorWindow
+    public class DoorDoctorWindow : EditorWindow
     {
+        private enum Tab { Overview, Colliders, Audio }
+
+        private static readonly string[] TabLabels = { "Overview", "Colliders", "Audio" };
+
+        private Tab _tab;
         private int _doorId;
         private Vector2 _scroll;
+        private bool _collidersOnlyProblems;
 
         // Locator scan results (button-triggered - reading every closed subscene file each GUI
         // frame would be far too slow).
         private int _scannedDoorId = int.MinValue;
         private List<(string sceneName, SubScene subScene)> _subScenesWithDoor;
 
-        [MenuItem("Tools/Jeanf/AutomaticDoorSystem/Door Audio Doctor")]
+        [MenuItem("Tools/Jeanf/AutomaticDoorSystem/Door Doctor")]
         public static void Open()
         {
-            var window = GetWindow<DoorAudioDoctorWindow>("Door Audio Doctor");
-            window.minSize = new Vector2(420f, 320f);
+            var window = GetWindow<DoorDoctorWindow>("Door Doctor");
+            window.minSize = new Vector2(460f, 340f);
             window.Show();
         }
 
+        /// <summary>Inspector entry point ("Doctor..." on DoorAuthoring) - lands on the Audio tab.</summary>
         public static void Open(int doorId)
         {
             Open();
-            GetWindow<DoorAudioDoctorWindow>()._doorId = doorId;
+            var window = GetWindow<DoorDoctorWindow>();
+            window._doorId = doorId;
+            window._tab = Tab.Audio;
         }
 
         private void OnEnable()
@@ -58,7 +74,7 @@ namespace AutomaticDoorSystem.Editor
 
         private void OnInspectorUpdate()
         {
-            // Live values (state, distance, isPlaying) change while playing - keep the view fresh.
+            // Live values (state, distance, slot assignments) change while playing - keep the view fresh.
             if (Application.isPlaying) Repaint();
         }
 
@@ -73,8 +89,6 @@ namespace AutomaticDoorSystem.Editor
 
         private void OnGUI()
         {
-            _scroll = EditorGUILayout.BeginScrollView(_scroll);
-
             EditorGUILayout.Space();
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -85,8 +99,300 @@ namespace AutomaticDoorSystem.Editor
                 }
             }
 
+            _tab = (Tab)GUILayout.Toolbar((int)_tab, TabLabels);
             EditorGUILayout.Space();
 
+            _scroll = EditorGUILayout.BeginScrollView(_scroll);
+            switch (_tab)
+            {
+                case Tab.Overview: DrawOverviewTab(); break;
+                case Tab.Colliders: DrawCollidersTab(); break;
+                case Tab.Audio: DrawAudioTab(); break;
+            }
+            EditorGUILayout.EndScrollView();
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Overview tab - managers, world census, selected door state, authoring locator.
+
+        private void DrawOverviewTab()
+        {
+            if (!Application.isPlaying)
+            {
+                EditorGUILayout.HelpBox(
+                    "Live checks need play mode - the pools, the bridges and the door entities only exist there. " +
+                    "Static asset checks live in Tools > Jeanf > AutomaticDoorSystem > Setup Validator.",
+                    MessageType.Info);
+                DrawAuthoringLocator();
+                return;
+            }
+
+            var world = World.DefaultGameObjectInjectionWorld;
+            if (world == null || !world.IsCreated)
+            {
+                EditorGUILayout.HelpBox("No DefaultGameObjectInjectionWorld - ECS is not running at all.", MessageType.Error);
+                return;
+            }
+
+            EditorGUILayout.LabelField("Managers", EditorStyles.boldLabel);
+            var dataBridge = DoorDataBridge.Instance;
+            Row(dataBridge != null, "DoorDataBridge present in the scene",
+                "No DoorDataBridge instance - nothing reads the door entities. Run the Setup Validator.");
+            Row(BoxColliderPoolManager.Instance != null, "BoxColliderPoolManager present in the scene",
+                "No BoxColliderPoolManager - doors never get physical colliders.");
+            Row(AudioSourcePoolManager.Instance != null, "AudioSourcePoolManager present in the scene",
+                "No AudioSourcePoolManager - no pooled AudioSources exist at all.");
+            Row(DoorAudioBridge.Instance != null, "DoorAudioBridge present in the scene",
+                "No DoorAudioBridge - audio events are never routed to an AudioSource.");
+            Row(Camera.main != null, "Camera.main found (both pools cull by distance to it)",
+                "No enabled MainCamera - neither pool ever activates anything.");
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Baked world census", EditorStyles.boldLabel);
+            DrawWorldCensus(world.EntityManager, dataBridge);
+
+            EditorGUILayout.Space();
+            if (dataBridge != null && dataBridge.TryGetDoorInfo(_doorId, out var info))
+            {
+                EditorGUILayout.LabelField($"Door {_doorId}", EditorStyles.boldLabel);
+                DrawDoorState(info);
+            }
+            else
+            {
+                EditorGUILayout.HelpBox($"Door id {_doorId} is not in the bridge cache - see the census above " +
+                                        "for duplicates / invisible doors, or locate its authoring below.", MessageType.Warning);
+            }
+
+            DrawAuthoringLocator();
+        }
+
+        /// <summary>
+        /// Fleet-wide integrity of the baked doors: duplicate ids (all but one lose colliders AND
+        /// audio), doors missing one of the components the bridge's query requires (they never
+        /// reach the cache - silently), and disabled doors.
+        /// </summary>
+        private void DrawWorldCensus(EntityManager em, DoorDataBridge dataBridge)
+        {
+            var idsSeen = new Dictionary<int, int>();
+            var invisibleRows = new List<string>();
+            int enabledCount;
+
+            using (var query = em.CreateEntityQuery(ComponentType.ReadOnly<DoorComponent>()))
+            {
+                var entities = query.ToEntityArray(Allocator.Temp);
+                enabledCount = entities.Length;
+                for (var i = 0; i < entities.Length; i++)
+                {
+                    var e = entities[i];
+                    var id = em.GetComponentData<DoorComponent>(e).DoorId;
+                    idsSeen[id] = idsSeen.TryGetValue(id, out var n) ? n + 1 : 1;
+
+                    // The bridge's query needs ALL of these; a door missing one never reaches the
+                    // cache - and therefore never gets a collider or audio - without any log.
+                    var missing = new List<string>();
+                    if (!em.HasComponent<DoorStateComponent>(e)) missing.Add("DoorStateComponent");
+                    if (!em.HasComponent<DoorTransformData>(e)) missing.Add("DoorTransformData");
+                    if (!em.HasComponent<LocalToWorld>(e)) missing.Add("LocalToWorld");
+                    if (!em.HasComponent<DoorTriggerVolume>(e)) missing.Add("DoorTriggerVolume");
+                    if (missing.Count > 0) invisibleRows.Add($"Door {id} (e{e.Index}) missing: {string.Join(", ", missing)}");
+                }
+                entities.Dispose();
+            }
+
+            int disabledCount;
+            var allDesc = new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<DoorComponent>() },
+                Options = EntityQueryOptions.IncludeDisabledEntities
+            };
+            using (var query = em.CreateEntityQuery(allDesc))
+            {
+                disabledCount = query.CalculateEntityCount() - enabledCount;
+            }
+
+            var cacheCount = dataBridge != null ? dataBridge.GetAllDoorInfo()?.Count ?? 0 : 0;
+            EditorGUILayout.LabelField(
+                $"Door entities: {enabledCount} enabled, {disabledCount} disabled   |   distinct ids: {idsSeen.Count}   |   bridge cache: {cacheCount}");
+
+            if (enabledCount == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "ZERO enabled door entities in the world. Door subscenes are not streamed in, or their entity " +
+                    "bakes are stale/empty.", MessageType.Error);
+            }
+
+            foreach (var d in idsSeen.Where(kv => kv.Value > 1))
+            {
+                EditorGUILayout.HelpBox(
+                    $"Door Id {d.Key} exists on {d.Value} baked doors - all but one lose their collider AND their " +
+                    "audio. Stale subscene bake or missed renumbering; renumber with the Setup Validator.",
+                    MessageType.Error);
+            }
+
+            foreach (var row in invisibleRows)
+            {
+                EditorGUILayout.HelpBox(row + "  -> invisible to DoorDataBridge (silently gets no collider and no audio).",
+                    MessageType.Error);
+            }
+
+            if (dataBridge != null)
+            {
+                EditorGUILayout.HelpBox(LoadedIdsSummary(dataBridge), MessageType.Info);
+            }
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Colliders tab - the pooled BoxCollider chain, fleet-wide.
+
+        private void DrawCollidersTab()
+        {
+            if (!Application.isPlaying)
+            {
+                EditorGUILayout.HelpBox("Enter play mode and walk near the doors you are testing.", MessageType.Info);
+                return;
+            }
+
+            var dataBridge = DoorDataBridge.Instance;
+            var pool = BoxColliderPoolManager.Instance;
+            var cam = Camera.main;
+
+            if (!Row(dataBridge != null, "DoorDataBridge present", "No DoorDataBridge - the pool has nothing to read.")) return;
+            if (!Row(pool != null, "BoxColliderPoolManager present", "No BoxColliderPoolManager - no pooled colliders exist.")) return;
+            if (!Row(cam != null, "Camera.main found (pool culls by distance to it)", "No enabled MainCamera - the pool never activates any collider.")) return;
+
+            var camPos = cam.transform.position;
+            var slots = ReadColliderSlots(pool);
+            var slotsByDoor = slots.Where(s => s.DoorId >= 0)
+                .GroupBy(s => s.DoorId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var cache = dataBridge.GetAllDoorInfo();
+            if (cache == null || cache.Count == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "The bridge cache is EMPTY - the pool's update returns early without any console message. " +
+                    "See the Overview tab's census: either no door entities are loaded, or they are missing " +
+                    "components the bridge's query requires.", MessageType.Error);
+                return;
+            }
+
+            EditorGUILayout.Space();
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(
+                    $"{cache.Count} door(s) cached  |  range {pool.cullingDistance:0}m  |  " +
+                    $"{pool.GetActiveColliderCount()}/{pool.maxPoolSize} colliders active (a double door uses 2)",
+                    EditorStyles.boldLabel);
+                _collidersOnlyProblems = GUILayout.Toggle(_collidersOnlyProblems, "problems only", GUILayout.Width(110f));
+            }
+
+            foreach (var door in cache.OrderBy(d => Vector3.Distance(d.position, camPos)))
+            {
+                var dist = Vector3.Distance(door.position, camPos);
+                var inRange = dist <= pool.cullingDistance;
+                slotsByDoor.TryGetValue(door.doorId, out var doorSlots);
+                var activeSlots = doorSlots?.Count(s => s.ColliderEnabled) ?? 0;
+
+                var panelsOk = dataBridge.TryGetDoorPanels(door.doorId, out var panels, out var panelCount);
+                var panelText = "no panel buffer";
+                if (panelsOk)
+                {
+                    var withCollider = 0;
+                    for (var p = 0; p < panelCount; p++)
+                        if (panels[p].hasColliderData) withCollider++;
+                    panelText = $"{panelCount} panel(s), {withCollider} with baked collider size";
+                }
+
+                // A door root within Minimum Spacing of a nearer door is silently dropped by
+                // RemoveSpatialDuplicates - name the conflicting door instead of guessing.
+                var spatialConflicts = cache
+                    .Where(d => d.doorId != door.doorId &&
+                                Vector3.Distance(d.position, door.position) < pool.minimumSpacing)
+                    .Select(d => d.doorId).ToList();
+
+                string verdict;
+                var type = MessageType.None;
+                if (!inRange)
+                {
+                    verdict = "out of range - no collider expected";
+                }
+                else if (!panelsOk)
+                {
+                    verdict = "IN RANGE but the panel buffer cannot be resolved (no DoubleDoorBuffer on the baked " +
+                              "entity, or a dead cached entity) - the pool skips this door with NO console message. " +
+                              "Re-bake this door's subscene.";
+                    type = MessageType.Error;
+                }
+                else if (activeSlots == 0 && spatialConflicts.Count > 0)
+                {
+                    verdict = $"in range, panels fine, but NO slot - door root within {pool.minimumSpacing:0.00}m of " +
+                              $"door(s) {string.Join(", ", spatialConflicts)}: the pool keeps only the nearest of " +
+                              "spatially overlapping doors. Separate the door roots or lower Minimum Spacing.";
+                    type = MessageType.Warning;
+                }
+                else if (activeSlots == 0)
+                {
+                    verdict = "in range, panels fine, but NO slot - nearer doors may exhaust the pool " +
+                              $"({pool.GetActiveColliderCount()}/{pool.maxPoolSize} in use; raise Max Pool Size to test).";
+                    type = MessageType.Warning;
+                }
+                else
+                {
+                    verdict = $"OK - {activeSlots} pooled collider(s) tracking it" +
+                              (door.isLocked ? " (door locked: colliders hold position by design)" : "");
+                }
+
+                if (_collidersOnlyProblems && type == MessageType.None) continue;
+
+                var marker = door.doorId == _doorId ? "> " : "   ";
+                EditorGUILayout.LabelField($"{marker}Door {door.doorId}   {dist:0.0}m   {panelText}");
+                if (type == MessageType.None) EditorGUILayout.LabelField("      " + verdict, EditorStyles.miniLabel);
+                else EditorGUILayout.HelpBox(verdict, type);
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Pool slots", EditorStyles.boldLabel);
+            foreach (var s in slots)
+            {
+                var label = s.DoorId < 0
+                    ? $"slot {s.PoolIndex:D2}: free"
+                    : $"slot {s.PoolIndex:D2}: door {s.DoorId} panel {s.PanelIndex} {(s.ColliderEnabled ? "ENABLED" : "disabled")} at {s.Position}";
+                EditorGUILayout.LabelField(label, EditorStyles.miniLabel);
+            }
+        }
+
+        private struct ColliderSlotInfo
+        {
+            public int PoolIndex;
+            public int DoorId;
+            public int PanelIndex;
+            public bool ColliderEnabled;
+            public Vector3 Position;
+        }
+
+        private static List<ColliderSlotInfo> ReadColliderSlots(BoxColliderPoolManager pool)
+        {
+            var result = new List<ColliderSlotInfo>(pool.maxPoolSize);
+            for (var i = 0; i < pool.maxPoolSize; i++)
+            {
+                if (!pool.TryGetSlotInfo(i, out var doorId, out var panelIndex, out var collider)) break;
+                result.Add(new ColliderSlotInfo
+                {
+                    PoolIndex = i,
+                    DoorId = doorId,
+                    PanelIndex = panelIndex,
+                    ColliderEnabled = collider != null && collider.enabled,
+                    Position = collider != null ? collider.transform.position : Vector3.zero,
+                });
+            }
+            return result;
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Audio tab - the pooled AudioSource chain for one door (formerly the Door Audio Doctor).
+
+        private void DrawAudioTab()
+        {
             if (!Application.isPlaying)
             {
                 EditorGUILayout.HelpBox(
@@ -94,17 +400,9 @@ namespace AutomaticDoorSystem.Editor
                     "Static asset checks live in Tools > Jeanf > AutomaticDoorSystem > Setup Validator.",
                     MessageType.Info);
                 DrawAuthoringLocator();
-                EditorGUILayout.EndScrollView();
                 return;
             }
 
-            DrawLiveDiagnostics();
-
-            EditorGUILayout.EndScrollView();
-        }
-
-        private void DrawLiveDiagnostics()
-        {
             var dataBridge = DoorDataBridge.Instance;
             var pool = AudioSourcePoolManager.Instance;
             var audioBridge = DoorAudioBridge.Instance;
@@ -427,7 +725,7 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.HelpBox(
                 $"Live state: {state.CurrentState} (was {state.PreviousState})  |  timer {state.StateTimer:0.00}s  |  " +
                 $"entities in trigger: {state.EntitiesInTrigger}  |  locked: {(state.IsLocked == 1 ? "yes" : "no")}\n" +
-                "No sound on approach but a working test event below means the problem is detection/state, not audio.",
+                "No sound on approach but a working test event means the problem is detection/state, not audio.",
                 MessageType.None);
         }
 
@@ -593,14 +891,14 @@ namespace AutomaticDoorSystem.Editor
 
             if (!Application.isPlaying)
             {
-                error = "[DoorAudioDoctor] Test events only work in play mode.";
+                error = "[DoorDoctor] Test events only work in play mode.";
                 return false;
             }
 
             var world = World.DefaultGameObjectInjectionWorld;
             if (world == null)
             {
-                error = "[DoorAudioDoctor] No default ECS world - cannot fire a test event.";
+                error = "[DoorDoctor] No default ECS world - cannot fire a test event.";
                 return false;
             }
 
@@ -621,7 +919,7 @@ namespace AutomaticDoorSystem.Editor
                 Position = position
             });
 
-            Debug.Log($"[DoorAudioDoctor] Fired test {eventType} event for door {doorId}.");
+            Debug.Log($"[DoorDoctor] Fired test {eventType} event for door {doorId}.");
             return true;
         }
 
@@ -685,7 +983,7 @@ namespace AutomaticDoorSystem.Editor
             if (world == null || !world.IsCreated) return;
 
             using (var query = world.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<DoorComponent>()))
-            using (var doors = query.ToComponentDataArray<DoorComponent>(Unity.Collections.Allocator.Temp))
+            using (var doors = query.ToComponentDataArray<DoorComponent>(Allocator.Temp))
             {
                 foreach (var door in doors)
                 {
@@ -699,7 +997,7 @@ namespace AutomaticDoorSystem.Editor
                 Options = EntityQueryOptions.IncludeDisabledEntities
             };
             using (var query = world.EntityManager.CreateEntityQuery(allDesc))
-            using (var doors = query.ToComponentDataArray<DoorComponent>(Unity.Collections.Allocator.Temp))
+            using (var doors = query.ToComponentDataArray<DoorComponent>(Allocator.Temp))
             {
                 int total = 0;
                 foreach (var door in doors)

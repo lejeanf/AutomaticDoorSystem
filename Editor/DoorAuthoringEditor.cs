@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System.Collections.Generic;
 using jeanf.validationTools;
 using UnityEditor;
@@ -50,7 +50,7 @@ namespace AutomaticDoorSystem.Editor
 
         /// <summary>
         /// Heuristic pivot/orientation findings. Logged once per selection so the door "notifies",
-        /// but nothing is ever auto-fixed — the inspector asks for human confirmation via the
+        /// but nothing is ever auto-fixed â€” the inspector asks for human confirmation via the
         /// edit-mode test buttons instead.
         /// </summary>
         private void RefreshPivotWarnings(bool logToConsole)
@@ -63,7 +63,7 @@ namespace AutomaticDoorSystem.Editor
                 Debug.LogWarning(
                     $"[DoorAuthoring] '{door.gameObject.name}' pivot/orientation check found {_pivotWarnings.Count} " +
                     $"possible issue(s):\n- {string.Join("\n- ", _pivotWarnings)}\n" +
-                    "These are heuristics — confirm with the edit-mode Open/Close test buttons on the DoorAuthoring " +
+                    "These are heuristics â€” confirm with the edit-mode Open/Close test buttons on the DoorAuthoring " +
                     "inspector before changing the setup.", door.gameObject);
             }
         }
@@ -98,7 +98,7 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.PropertyField(audioAnchorProp, new GUIContent("Audio Anchor (Optional)"));
 
             // ValidationDrawer already washes the Behavior Config field orange and states why
-            // when it is unset — the help boxes below only add the how-to.
+            // when it is unset â€” the help boxes below only add the how-to.
             var doorConfig = doorConfigProp.objectReferenceValue as DoorConfig;
             if (doorConfig == null)
             {
@@ -135,18 +135,18 @@ namespace AutomaticDoorSystem.Editor
             bool isDouble = doorConfig.doorCount == DoorConfig.DoorCountEnum.Double;
 
             // Conditionally required (depends on the config's door count), so no [Validation]
-            // attribute — the shared helper gives the missing ones the same orange treatment.
+            // attribute â€” the shared helper gives the missing ones the same orange treatment.
             if (isDouble)
             {
                 ValidationUi.DrawRequiredField(leftDoorMeshProp,
-                    "A Double config needs BOTH panels — without the left panel nothing animates.");
+                    "A Double config needs BOTH panels â€” without the left panel nothing animates.");
                 ValidationUi.DrawRequiredField(rightDoorMeshProp,
-                    "A Double config needs BOTH panels — without the right panel nothing animates.");
+                    "A Double config needs BOTH panels â€” without the right panel nothing animates.");
             }
             else
             {
                 ValidationUi.DrawRequiredField(doorMeshProp,
-                    "A Single config needs the door mesh — without it nothing animates.");
+                    "A Single config needs the door mesh â€” without it nothing animates.");
             }
 
             EditorGUILayout.PropertyField(triggerVolumeObjectProp);
@@ -276,11 +276,11 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Live Audio (play mode)", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox(DoorAudioDoctorWindow.LiveStatusSummary(door.doorId), MessageType.None);
+            EditorGUILayout.HelpBox(DoorDoctorWindow.LiveStatusSummary(door.doorId), MessageType.None);
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                var source = DoorAudioDoctorWindow.FindAssignedSource(door.doorId);
+                var source = DoorDoctorWindow.FindAssignedSource(door.doorId);
                 using (new EditorGUI.DisabledScope(source == null))
                 {
                     if (GUILayout.Button("Select AudioSource"))
@@ -292,19 +292,19 @@ namespace AutomaticDoorSystem.Editor
 
                 if (GUILayout.Button("Fire Open"))
                 {
-                    if (!DoorAudioDoctorWindow.TryFireTestEvent(door.doorId, AudioEventType.Open, out var error))
+                    if (!DoorDoctorWindow.TryFireTestEvent(door.doorId, AudioEventType.Open, out var error))
                         Debug.LogError(error);
                 }
 
                 if (GUILayout.Button("Fire Close"))
                 {
-                    if (!DoorAudioDoctorWindow.TryFireTestEvent(door.doorId, AudioEventType.Close, out var error))
+                    if (!DoorDoctorWindow.TryFireTestEvent(door.doorId, AudioEventType.Close, out var error))
                         Debug.LogError(error);
                 }
 
                 if (GUILayout.Button("Doctor..."))
                 {
-                    DoorAudioDoctorWindow.Open(door.doorId);
+                    DoorDoctorWindow.Open(door.doorId);
                 }
             }
         }
@@ -326,8 +326,8 @@ namespace AutomaticDoorSystem.Editor
             }
 
             EditorGUILayout.HelpBox(
-                "Possible pivot/orientation issues (heuristics — confirm with the test buttons below " +
-                "before changing anything):\n\n• " + string.Join("\n\n• ", _pivotWarnings),
+                "Possible pivot/orientation issues (heuristics â€” confirm with the test buttons below " +
+                "before changing anything):\n\nâ€¢ " + string.Join("\n\nâ€¢ ", _pivotWarnings),
                 MessageType.Warning);
         }
 
@@ -337,7 +337,7 @@ namespace AutomaticDoorSystem.Editor
 
             if (Application.isPlaying)
             {
-                EditorGUILayout.HelpBox("The edit-mode test is unavailable in play mode — the door systems are live.", MessageType.Info);
+                EditorGUILayout.HelpBox("The edit-mode test is unavailable in play mode â€” the door systems are live.", MessageType.Info);
                 return;
             }
 
@@ -362,7 +362,7 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.BeginHorizontal();
             if (directionMatters)
             {
-                // "Front" is the side the DETECTION system treats as DirectionForward = 1 — the
+                // "Front" is the side the DETECTION system treats as DirectionForward = 1 â€” the
                 // quantized world axis, exactly what a player walking up in game triggers. Testing
                 // both sides here reproduces the roaming behavior, not just the animation.
                 if (GUILayout.Button("Open From Front")) DoorPreviewDriver.PreviewOpen(door, directionForward: true);
@@ -390,7 +390,7 @@ namespace AutomaticDoorSystem.Editor
             if (DoorPreviewDriver.IsPreviewing(door))
             {
                 EditorGUILayout.HelpBox(
-                    "Preview active — Reset (or deselecting this door) restores the authored pose. " +
+                    "Preview active â€” Reset (or deselecting this door) restores the authored pose. " +
                     "Don't save the scene while the door is posed open.",
                     MessageType.Info);
             }

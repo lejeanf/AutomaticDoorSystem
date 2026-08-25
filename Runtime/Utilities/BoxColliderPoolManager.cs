@@ -399,5 +399,26 @@ namespace AutomaticDoorSystem.Utilities
             }
             return count;
         }
+
+        /// <summary>
+        /// Read-only view of one pool slot for diagnostics (Door Doctor's Colliders tab).
+        /// doorId is -1 for a free slot. Returns false once poolIndex runs past the pool.
+        /// </summary>
+        public bool TryGetSlotInfo(int poolIndex, out int doorId, out int panelIndex, out BoxCollider collider)
+        {
+            doorId = -1;
+            panelIndex = -1;
+            collider = null;
+
+            if (_colliderAssignments == null || poolIndex < 0 || poolIndex >= _colliderAssignments.Length)
+            {
+                return false;
+            }
+
+            doorId = _colliderAssignments[poolIndex].doorId;
+            panelIndex = _colliderAssignments[poolIndex].panelIndex;
+            collider = poolIndex < _colliderPool.Length ? _colliderPool[poolIndex] : null;
+            return true;
+        }
     }
 }

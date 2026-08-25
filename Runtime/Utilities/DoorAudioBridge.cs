@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using jeanf.audiosystems;
 using Unity.Entities;
 using UnityEngine;
@@ -159,7 +159,7 @@ namespace AutomaticDoorSystem
 
         /// <summary>
         /// Diagnostic lookup for the registration this bridge would use for a door's next audio
-        /// event. Used by the Door Audio Doctor window; not part of the playback path.
+        /// event. Used by the Door Doctor window; not part of the playback path.
         /// </summary>
         public bool TryGetRegistration(int doorNumber, out AudioSource audioSource, out DoorAudioConfiguration config)
         {

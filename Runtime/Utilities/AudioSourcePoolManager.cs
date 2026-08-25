@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using AutomaticDoorSystem.Utilities;
 using SteamAudio;
 using Unity.Collections;
@@ -515,7 +515,7 @@ namespace AutomaticDoorSystem
 
         /// <summary>
         /// Diagnostic lookup of the pool slot currently holding a door, if any. Used by the
-        /// Door Audio Doctor window; not part of the playback path.
+        /// Door Doctor window; not part of the playback path.
         /// </summary>
         public bool TryGetPoolSlot(int doorNumber, out int poolIndex, out AudioSource audioSource, out bool isPlayingFlag)
         {
