@@ -1038,7 +1038,7 @@ namespace AutomaticDoorSystem.Editor
 
         private static List<T> FindAll<T>() where T : Object
         {
-            return Object.FindObjectsByType<T>(FindObjectsInactive.Include, FindObjectsSortMode.None).ToList();
+            return Object.FindObjectsByType<T>(FindObjectsInactive.Include).ToList();
         }
 
         /// <summary>Paths of the scenes backing every currently open SubScene.</summary>

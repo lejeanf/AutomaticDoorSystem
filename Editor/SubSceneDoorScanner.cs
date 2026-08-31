@@ -42,7 +42,7 @@ namespace AutomaticDoorSystem.Editor
         {
             var results = new List<SubSceneDoors>();
 
-            foreach (var subScene in Object.FindObjectsByType<SubScene>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            foreach (var subScene in Object.FindObjectsByType<SubScene>(FindObjectsInactive.Include))
             {
                 if (subScene.SceneAsset == null) continue;
 

@@ -677,7 +677,7 @@ namespace AutomaticDoorSystem.Editor
         /// </summary>
         private void DrawOutputStage(AudioSource source)
         {
-            var listeners = FindObjectsByType<AudioListener>(FindObjectsSortMode.None)
+            var listeners = FindObjectsByType<AudioListener>()
                 .Where(l => l.isActiveAndEnabled).ToList();
             if (Row(listeners.Count == 1,
                     listeners.Count == 1
@@ -724,7 +724,7 @@ namespace AutomaticDoorSystem.Editor
             // (Master at -80 dB) during loads and region changes. If the unmute signal is missed,
             // EVERY mixer-routed sound is silent while every per-source check stays green - the
             // exact "all green but silent" case.
-            var mixerManager = FindFirstObjectByType<MixerManager>();
+            var mixerManager = FindAnyObjectByType<MixerManager>();
             if (mixerManager != null)
             {
                 Row(!mixerManager.IsCurrentlyMuted,
@@ -735,7 +735,7 @@ namespace AutomaticDoorSystem.Editor
                     "(audiosystems >= 0.5.1 unmutes on a fallback timeout).");
             }
 
-            var steamManager = FindFirstObjectByType<SteamAudio.SteamAudioManager>();
+            var steamManager = FindAnyObjectByType<SteamAudio.SteamAudioManager>();
             Row(steamManager != null || !source.spatialize,
                 steamManager != null
                     ? "SteamAudioManager present (Steam Audio simulation running)"
@@ -885,7 +885,7 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Find the door's authoring", EditorStyles.boldLabel);
 
-            var authorings = FindObjectsByType<DoorAuthoring>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            var authorings = FindObjectsByType<DoorAuthoring>(FindObjectsInactive.Include);
             var match = authorings.FirstOrDefault(a => a.doorId == _doorId);
 
             if (match != null)
@@ -948,7 +948,7 @@ namespace AutomaticDoorSystem.Editor
             var overridePattern = new Regex($@"propertyPath: doorId\s*\r?\n\s*value: {_doorId}\r?$", RegexOptions.Multiline);
             var plainPattern = new Regex($@"doorId: {_doorId}\r?$", RegexOptions.Multiline);
 
-            foreach (var subScene in FindObjectsByType<SubScene>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            foreach (var subScene in FindObjectsByType<SubScene>(FindObjectsInactive.Include))
             {
                 if (subScene.SceneAsset == null || subScene.IsLoaded) continue;
 
