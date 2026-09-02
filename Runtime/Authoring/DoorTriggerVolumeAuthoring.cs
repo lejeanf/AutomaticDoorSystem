@@ -52,20 +52,24 @@ namespace AutomaticDoorSystem
             var worldBottom = volumeTransform.TransformPoint(localCenter - halfHeight);
             var worldTop = volumeTransform.TransformPoint(localCenter + halfHeight);
 
-            // Scale the markers with the volume so they stay readable on both small and large doors.
-            float markerRadius = Mathf.Clamp(Mathf.Min(size.x, size.z) * 0.06f, 0.03f, 0.25f);
+            // Small markers: the top/bottom points are flat discs lying in the volume's top and
+            // bottom faces, the audio anchor a small wire sphere. Scaled a little with the volume
+            // but capped so they never dominate the doorway.
+            float markerRadius = Mathf.Clamp(Mathf.Min(size.x, size.z) * 0.025f, 0.03f, 0.08f);
+            var volumeUp = volumeTransform.TransformDirection(Vector3.up).normalized;
 
             Gizmos.color = Color.yellow;
             if (centreIsAudioAnchor) Gizmos.DrawWireSphere(worldCenter, markerRadius);
             Gizmos.DrawLine(worldBottom, worldTop);
 
-            Gizmos.color = new Color(1f, 0.5f, 0f); // orange - bottom
-            Gizmos.DrawSphere(worldBottom, markerRadius);
-
-            Gizmos.color = Color.cyan; // top
-            Gizmos.DrawSphere(worldTop, markerRadius);
-
 #if UNITY_EDITOR
+            var bottomColor = new Color(1f, 0.5f, 0f);
+            UnityEditor.Handles.zTest = UnityEngine.Rendering.CompareFunction.Always;
+            UnityEditor.Handles.color = bottomColor;
+            UnityEditor.Handles.DrawSolidDisc(worldBottom, volumeUp, markerRadius);
+            UnityEditor.Handles.color = Color.cyan;
+            UnityEditor.Handles.DrawSolidDisc(worldTop, volumeUp, markerRadius);
+
             if (!drawLabels) return;
 
             UnityEditor.Handles.Label(worldTop + Vector3.up * markerRadius * 2f,

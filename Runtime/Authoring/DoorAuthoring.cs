@@ -197,10 +197,19 @@ namespace AutomaticDoorSystem
         /// </summary>
         public static System.Func<Transform, Quaternion?> AuthoredWorldRotationProvider;
 
+        /// <summary>Same for the authored (closed) world position, so slide arrows stay put while a panel is previewed.</summary>
+        public static System.Func<Transform, Vector3?> AuthoredWorldPositionProvider;
+
         private static Quaternion ClosedWorldRotation(Transform panel)
         {
             var provided = AuthoredWorldRotationProvider?.Invoke(panel);
             return provided ?? panel.rotation;
+        }
+
+        private static Vector3 ClosedWorldPosition(Transform panel)
+        {
+            var provided = AuthoredWorldPositionProvider?.Invoke(panel);
+            return provided ?? panel.position;
         }
 
         /// <summary>Scene camera side while gizmos are drawn; FRONT when there is no camera.</summary>
@@ -366,7 +375,7 @@ namespace AutomaticDoorSystem
             {
                 if (doorConfig.doorCount == DoorConfig.DoorCountEnum.Single && doorMesh != null)
                 {
-                    var initialPos = doorMesh.position;
+                    var initialPos = ClosedWorldPosition(doorMesh);
                     Gizmos.color = Color.red;
                     Gizmos.DrawWireSphere(initialPos, 0.15f);
                     UnityEditor.Handles.Label(initialPos + Vector3.up * 0.3f, "Closed Position",
@@ -385,7 +394,7 @@ namespace AutomaticDoorSystem
                 {
                     if (leftDoorMesh != null)
                     {
-                        var leftInitialPos = leftDoorMesh.position;
+                        var leftInitialPos = ClosedWorldPosition(leftDoorMesh);
                         var leftTargetPos = leftInitialPos + SlideVectorToWorld(transform, doorConfig.slideOpenOffset);
 
                         Gizmos.color = Color.red;
@@ -398,7 +407,7 @@ namespace AutomaticDoorSystem
 
                     if (rightDoorMesh != null)
                     {
-                        var rightInitialPos = rightDoorMesh.position;
+                        var rightInitialPos = ClosedWorldPosition(rightDoorMesh);
                         var rightTargetPos = rightInitialPos +
                                              SlideVectorToWorld(transform, MirrorForRightPanel(doorConfig.slideOpenOffset));
 
@@ -447,78 +456,89 @@ namespace AutomaticDoorSystem
         private static readonly Color BackColor = Color.red;
 
         /// <summary>
-        /// The swing path(s), drawn from the CLOSED rotation so they stay fixed while the preview
-        /// animates the panel. Forward-style doors show only the swing a player on the Scene
-        /// camera's side would trigger - green when that is the front, red when it is the back -
-        /// so what you see is what "Open" in the inspector (and the runtime) will do from where
-        /// you stand. OneWay (red) and double BothWay (cyan) swing a fixed way and show that.
+        /// The swing path of each panel, drawn from the CLOSED rotation so it stays fixed while
+        /// the preview animates. The angle per panel is exactly what DoorAnimationSystem applies:
+        ///   Forward  - single: +fwd from the front, bwd from the back; double: the left panel takes
+        ///              bwd from the front / fwd from the back and the right panel the negated angle.
+        ///   BothWay  - double: BOTH panels take the forward angle, un-mirrored (one swings each
+        ///              way because the panels face each other); single: behaves as Forward.
+        ///   OneWay   - bwd when One Way Direction z >= 0, else fwd; double right panel negated.
+        /// Forward-style arcs show the swing for the Scene camera's side (green = front, red =
+        /// back); OneWay is red (fixed swing), double BothWay cyan. Each panel's closed edge is
+        /// read off its own geometry, not assumed from the left/right slot.
         /// </summary>
         private void DrawRotatingDoorGizmos(bool isDouble)
         {
             if (doorConfig == null) return;
 
             var style = doorConfig.openingStyle;
-            var sideMatters = ApproachSideMatters;
-            var cameraOnFront = !sideMatters || CameraIsOnFront();
+            var cameraOnFront = !ApproachSideMatters || CameraIsOnFront();
             var sideColor = cameraOnFront ? FrontColor : BackColor;
+            var fwd = doorConfig.openForwardAngle;
+            var bwd = doorConfig.openBackwardAngle;
+            var oneWayAngle = doorConfig.oneWayDirection.z >= 0 ? bwd : fwd;
 
             if (isDouble)
             {
-                float leftWidth = GetDoorWidth(leftDoorMesh);
-                float rightWidth = GetDoorWidth(rightDoorMesh);
-
                 float leftAngle, rightAngle;
-                Color leftColor, rightColor;
+                Color color;
                 switch (style)
                 {
                     case DoorConfig.OpeningStyle.BothWay:
-                        leftAngle = rightAngle = doorConfig.openForwardAngle;
-                        leftColor = rightColor = Color.cyan;
+                        leftAngle = rightAngle = fwd;
+                        color = Color.cyan;
                         break;
-
                     case DoorConfig.OpeningStyle.OneWay:
-                    {
-                        bool useForward = doorConfig.oneWayDirection.z >= 0;
-                        leftAngle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
-                        rightAngle = useForward ? doorConfig.openForwardAngle : doorConfig.openBackwardAngle;
-                        leftColor = rightColor = BackColor;
+                        leftAngle = oneWayAngle;
+                        rightAngle = -oneWayAngle;
+                        color = BackColor;
                         break;
-                    }
-
-                    default: // Forward: runtime uses the BACKWARD rotation for a front approach, mirrored on the right.
-                        leftAngle = cameraOnFront ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
-                        rightAngle = leftAngle;
-                        leftColor = rightColor = sideColor;
+                    default:
+                        leftAngle = cameraOnFront ? bwd : fwd;
+                        rightAngle = -leftAngle;
+                        color = sideColor;
                         break;
                 }
-
-                if (leftDoorMesh != null)
-                    DrawRotationArcForDoubleDoor(leftDoorMesh.position, ClosedWorldRotation(leftDoorMesh), leftAngle, leftColor, true, leftWidth);
-                if (rightDoorMesh != null)
-                    DrawRotationArcForDoubleDoor(rightDoorMesh.position, ClosedWorldRotation(rightDoorMesh), rightAngle, rightColor, false, rightWidth);
+                DrawPanelSwing(leftDoorMesh, leftAngle, color);
+                DrawPanelSwing(rightDoorMesh, rightAngle, color);
             }
             else
             {
-                Vector3 doorPosition = doorMesh != null ? doorMesh.position : transform.position;
-                Quaternion doorRotation = doorMesh != null ? ClosedWorldRotation(doorMesh) : transform.rotation;
-                float singleDoorWidth = GetDoorWidth(doorMesh);
-
-                float angle;
-                Color color;
-                if (style == DoorConfig.OpeningStyle.OneWay)
-                {
-                    bool useForward = doorConfig.oneWayDirection.z >= 0;
-                    angle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
-                    color = BackColor;
-                }
-                else // Forward, and BothWay (which the runtime treats as Forward on a single)
-                {
-                    angle = cameraOnFront ? doorConfig.openForwardAngle : doorConfig.openBackwardAngle;
-                    color = sideColor;
-                }
-
-                DrawRotationArc(doorPosition, doorRotation, angle, color, singleDoorWidth);
+                var angle = style == DoorConfig.OpeningStyle.OneWay ? oneWayAngle : (cameraOnFront ? fwd : bwd);
+                var color = style == DoorConfig.OpeningStyle.OneWay ? BackColor : sideColor;
+                DrawPanelSwing(doorMesh, angle, color);
             }
+        }
+
+        private void DrawPanelSwing(Transform panel, float localYAngle, Color color)
+        {
+            if (panel == null) return;
+            DrawSwingArc(ClosedWorldPosition(panel), ClosedWorldRotation(panel), ClosedEdgeLocal(panel), localYAngle, color,
+                GetDoorWidth(panel));
+        }
+
+        /// <summary>
+        /// Which way the panel extends from its pivot along its own X, from the collider or
+        /// renderer bounds: +X (Vector3.right) or -X (Vector3.left). Prefabs differ here, so the
+        /// left/right slot must not be used to guess it.
+        /// </summary>
+        private static Vector3 ClosedEdgeLocal(Transform panel)
+        {
+            Vector3 center;
+            var box = panel.GetComponent<BoxCollider>();
+            if (box == null) box = panel.GetComponentInChildren<BoxCollider>();
+            if (box != null)
+            {
+                center = box.transform.TransformPoint(box.center);
+            }
+            else
+            {
+                var renderer = panel.GetComponent<Renderer>();
+                if (renderer == null) renderer = panel.GetComponentInChildren<Renderer>();
+                if (renderer == null) return Vector3.right;
+                center = renderer.bounds.center;
+            }
+            return Vector3.Dot(center - panel.position, panel.right) < 0f ? Vector3.left : Vector3.right;
         }
 
         private float GetDoorWidth(Transform doorTransform)
@@ -551,17 +571,6 @@ namespace AutomaticDoorSystem
             }
 
             return 1.5f;
-        }
-
-        private void DrawRotationArcForDoubleDoor(Vector3 position, Quaternion rotation, float angle, Color color, bool isLeftDoor, float arcRadius)
-        {
-            DrawSwingArc(position, rotation, isLeftDoor ? Vector3.left : Vector3.right,
-                isLeftDoor ? -angle : angle, color, arcRadius);
-        }
-
-        private void DrawRotationArc(Vector3 position, Quaternion rotation, float angle, Color color, float arcRadius)
-        {
-            DrawSwingArc(position, rotation, Vector3.right, angle, color, arcRadius);
         }
 
         /// <summary>
@@ -631,7 +640,7 @@ namespace AutomaticDoorSystem
                 // left door sits) and the left door does not move at all.
                 if (leftDoorMesh != null && !doorConfig.openRightDoorOnly)
                 {
-                    DrawSlideArrow(leftDoorMesh.position, worldOffset, Color.cyan);
+                    DrawSlideArrow(ClosedWorldPosition(leftDoorMesh), worldOffset, Color.cyan);
                 }
                 if (rightDoorMesh != null)
                 {
@@ -642,19 +651,19 @@ namespace AutomaticDoorSystem
                         var catchUp = Mathf.Max(rightSpan - doorConfig.slideOpenOffset.magnitude, 0f);
                         rightOffset = rightSpan > 1e-4f ? rightOffset / rightSpan * catchUp : Vector3.zero;
                     }
-                    DrawSlideArrow(rightDoorMesh.position, SlideVectorToWorld(transform, rightOffset), Color.cyan);
+                    DrawSlideArrow(ClosedWorldPosition(rightDoorMesh), SlideVectorToWorld(transform, rightOffset), Color.cyan);
                 }
             }
             else if (isDouble)
             {
                 if (leftDoorMesh != null)
                 {
-                    DrawSlideArrow(leftDoorMesh.position, worldOffset, Color.cyan);
+                    DrawSlideArrow(ClosedWorldPosition(leftDoorMesh), worldOffset, Color.cyan);
                 }
                 if (rightDoorMesh != null)
                 {
                     // Right door uses negated X in local space (matches animation system)
-                    DrawSlideArrow(rightDoorMesh.position,
+                    DrawSlideArrow(ClosedWorldPosition(rightDoorMesh),
                         SlideVectorToWorld(transform, MirrorForRightPanel(doorConfig.slideOpenOffset)),
                         Color.cyan);
                 }
@@ -663,7 +672,7 @@ namespace AutomaticDoorSystem
             {
                 if (doorMesh != null)
                 {
-                    DrawSlideArrow(doorMesh.position, worldOffset, Color.cyan);
+                    DrawSlideArrow(ClosedWorldPosition(doorMesh), worldOffset, Color.cyan);
                 }
                 else
                 {

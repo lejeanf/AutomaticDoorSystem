@@ -38,6 +38,19 @@ namespace AutomaticDoorSystem.Editor
             // The swing-arc gizmos must stay put while a panel is being previewed: hand them the
             // authored (closed) rotation instead of the live one.
             DoorAuthoring.AuthoredWorldRotationProvider = AuthoredWorldRotation;
+            DoorAuthoring.AuthoredWorldPositionProvider = AuthoredWorldPosition;
+        }
+
+        private static Vector3? AuthoredWorldPosition(Transform panel)
+        {
+            foreach (var snapshot in _panels)
+            {
+                if (snapshot.transform != panel) continue;
+                return panel.parent != null
+                    ? panel.parent.TransformPoint(snapshot.localPosition)
+                    : snapshot.localPosition;
+            }
+            return null;
         }
 
         private static Quaternion? AuthoredWorldRotation(Transform panel)

@@ -12,17 +12,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c17266d97555c8f4d905a5e24a562afa, type: 3}
   m_Name: DoorConfig_Sliding_Single
   m_EditorClassIdentifier: 
-  doorMovement: 0
+  doorMovement: 1
   doorCount: 0
   openingStyle: 0
   oneWayDirection: {x: 0, y: 0, z: 1}
   openForwardAngle: 90
   openBackwardAngle: -90
+  invertForwardSide: 0
   slideOpenOffset: {x: 1.5, y: 0, z: 0}
+  slidingStyle: 0
+  rightSlideOpenOffset: {x: 3, y: 0, z: 0}
+  openRightDoorOnly: 0
   animationDuration: 1.5
   autoCloseDelay: 3
   canOpenLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
   startLocked: 0
-  audioConfiguration: {fileID: 11400000, guid: e56d7082c665b9847bc0d3633f7e9158, type: 2}
