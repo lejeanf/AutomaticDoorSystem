@@ -109,9 +109,10 @@ Select your new DoorConfig and configure it in the Inspector:
 |---------|-------------|-------------------|
 | **Door Movement** | `Rotating` or `Sliding` | Choose based on door type |
 | **Door Count** | `Single` or `Double` | Single = 1 panel, Double = 2 panels |
-| **Opening Style** | How double doors open | `Forward` (both away from player) |
+| **Opening Style** | How rotating doors open | `Forward` (away from whoever approaches) |
 | **Open Forward Angle** | Rotation when opening forward | `90` |
 | **Open Backward Angle** | Rotation when opening backward | `-90` |
+| **Invert Forward Side** | Swap which side counts as FRONT (see [Which way does a Forward door open?](#which-way-does-a-forward-door-open)) | `off` unless the door swings toward you |
 | **Slide Open Offset** | Distance to slide (sliding doors) | `(1.5, 0, 0)` |
 | **Animation Duration** | How fast the door opens/closes | `1.0` - `1.5` seconds |
 | **Auto Close Delay** | Time before auto-closing | `3.0` seconds |
@@ -120,6 +121,9 @@ Select your new DoorConfig and configure it in the Inspector:
 
 ![Screenshot: 02_doorconfig_inspector.png](images/02_doorconfig_inspector.png)
 *DoorConfig Inspector with all settings visible*
+
+> The inspector only shows the settings that apply: pick **Rotating** and the sliding fields
+> disappear (and vice versa); the telescopic fields only show for a telescopic sliding double.
 
 ---
 
@@ -161,10 +165,40 @@ Door_SingleRotating          <- Root GameObject (DoorAuthoring goes here)
 | **Trigger Volume Object** | Drag TriggerVolume GameObject here |
 | **Door Config** | Drag your DoorConfig asset here |
 | **Door Audio Config** | Drag a DoorAudioConfiguration asset here (leave empty for a silent door) |
+| **Invert Forward Side** | Per-door override of the config's flag (`Use Config` / `Force Off` / `Force On`) for a prefab or instance whose front is the other way round |
+| **Start Locked** | Per-door override of the config's flag, so a locked variant of a door needs no extra config asset |
 | **Enable Debug** | Check for gizmo visualization |
 
 ![Screenshot: 04_doorauthoring_inspector.png](images/04_doorauthoring_inspector.png)
 *DoorAuthoring component configured for a double door*
+
+### Which way does a Forward door open?
+
+A rotating door with the **Forward** opening style swings *away* from whoever approaches it.
+The side rule is the same in the editor and at runtime (`DoorSideMath`):
+
+- The door root's **local +Z** half-space is the **FRONT**; local -Z is the **BACK**. The split
+  plane goes through the panel pivots (the doorway), so a root that sits off the doorway is fine.
+- The test uses the root's full transform - any rotation angle, any scale (a mirrored instance
+  with a negative scale flips its front along with its geometry).
+- When several characters are inside the trigger volume, the one **nearest the doorway** decides.
+- A player on the FRONT side makes the door swing to the BACK, and the other way round.
+
+Select a DoorAuthoring to see it before play mode:
+
+- **FRONT / BACK arrows** (green / red) at the doorway, labelled with what a player standing
+  there makes the door do.
+- The **Edit-Mode Door Test** reads the side from the Scene view camera: stand where the player
+  would, and **Open** previews the swing the runtime would choose. The inspector states the
+  camera's side and which way the door will swing.
+- The pivot check warns when a panel would swing *toward* the player on a given side, with the fix.
+
+If the door swings toward the player from **both** sides, the model's local +Z points the wrong
+way (pivot, rotation or scale in the source file). Turn on **Invert Forward Side** on the
+DoorConfig - or, for one prefab/instance sharing a config, set the DoorAuthoring's **Invert
+Forward Side** override to `Force On` - and press the test button again. No file needs fixing.
+If it only happens from one side, the hinge side (or the left/right panel assignment on a double)
+is off.
 
 ### Step 2.3: Add BoxColliders to Door Meshes
 
@@ -489,6 +523,18 @@ Finally, **close and reopen the subscenes** so the doors rebake with the audio r
 Two or more doors share Door Id `N`. Run the Setup Validator and press **Assign unique Door Ids**.
 (2.0 also stopped throwing here - the duplicate is now dropped with an explanatory error instead.)
 
+### A Forward-style door opens toward the player, or always the same way
+
+Select the door, check the **FRONT / BACK** arrows, and press **Open** with the Scene camera on each side (see
+[Which way does a Forward door open?](#which-way-does-a-forward-door-open)). Wrong on both
+sides: turn on **Invert Forward Side** (config, or the per-door override). Wrong on one side
+only: the hinge side or the left/right panel assignment is off. Then **close and reopen the
+subscene** so the door rebakes - the side rule is baked into the entity.
+
+Doors baked with 2.16 or older read the side along a world axis picked from the root's yaw, so
+doors at oblique angles, roots placed off the doorway, and overlapping trigger volumes could all
+pick the wrong side. Rebake every door subscene after updating.
+
 ### Doors moved/rotated and the trigger volume looks off
 
 The trigger volume centre is stored relative to the door root and is now transformed by the door's
@@ -506,6 +552,7 @@ full rotation and scale. If a rotated door's detection zone was tuned against th
 - [ ] Door meshes have **BoxCollider** sized to fit
 - [ ] TriggerVolume has **DoorTriggerVolumeAuthoring**, assigned to **Trigger Volume Object**
 - [ ] Meshes assigned in DoorAuthoring (single or left/right)
+- [ ] Forward-style rotating doors: FRONT/BACK arrows on the right sides (else **Invert Forward Side**)
 
 ### Per Door Instance (in Subscene):
 - [ ] **Unique Door ID** set in DoorAuthoring

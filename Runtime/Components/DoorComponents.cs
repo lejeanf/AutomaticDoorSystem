@@ -8,10 +8,18 @@ namespace AutomaticDoorSystem
     {
         public int DoorId;
         public DoorType Type;
-        public DoorAxis Axis;
         public float AnimationDuration;
         public float AutoCloseDelay;
         public FixedString128Bytes RegionId;
+        /// <summary>
+        /// A point on the doorway plane in the door root's local space (the mean of the panel
+        /// pivots). Approach-side detection measures depth along local +Z from THIS point, not from
+        /// the root origin, so a root that sits off the doorway still splits front/back correctly.
+        /// See <see cref="DoorSideMath"/>.
+        /// </summary>
+        public float3 SidePlaneLocalOrigin;
+        /// <summary>1 = the FRONT is local -Z instead of +Z (DoorConfig.invertForwardSide XOR the door's override).</summary>
+        public byte InvertForwardSide;
     }
 
     public struct DoorStateComponent : IComponentData
@@ -23,7 +31,13 @@ namespace AutomaticDoorSystem
         public byte IsLocked; // 0 = unlocked, 1 = locked
         public byte ShouldPlayOpenSound; // 0 = no, 1 = yes
         public byte ShouldPlayCloseSound; // 0 = no, 1 = yes
-        public byte DirectionForward; // 0 = backward, 1 = forward (for rotating doors)
+        /// <summary>
+        /// Side the nearest triggerable approached from when the door last left Closed:
+        /// 1 = FRONT (door root local +Z, unless inverted), 0 = BACK. Rotating doors with the
+        /// Forward style swing AWAY from this side. Only rewritten while the door is Closed, so a
+        /// closing door always retraces the swing it opened with.
+        /// </summary>
+        public byte DirectionForward;
     }
 
     public struct DoorTransformData : IComponentData
@@ -130,14 +144,6 @@ namespace AutomaticDoorSystem
         Opening = 1,
         Open = 2,
         Closing = 3
-    }
-
-    public enum DoorAxis : byte
-    {
-        X = 0,
-        Z = 1,
-        NegX = 2,
-        NegZ = 3
     }
 
     public enum AudioEventType : byte

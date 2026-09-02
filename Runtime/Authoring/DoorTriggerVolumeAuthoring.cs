@@ -79,7 +79,7 @@ namespace AutomaticDoorSystem
             if (!centreIsAudioAnchor) return;
 
             UnityEditor.Handles.Label(worldCenter + Vector3.right * markerRadius * 2f,
-                $"Audio anchor\nheight {(worldTop.y - worldBottom.y):F2}m",
+                "Audio anchor",
                 LabelStyle(Color.yellow));
 #endif
         }

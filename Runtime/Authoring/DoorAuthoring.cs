@@ -10,6 +10,24 @@ namespace AutomaticDoorSystem
         [Tooltip("REQUIRED: Unique identifier for this specific door instance (used for lock/unlock events)")]
         public int doorId = 0;
 
+        [Tooltip("Whether THIS door starts locked. Use Config takes the DoorConfig's Start Locked; Force On/Off " +
+                 "override it here so a locked variant of a door no longer needs its own config asset.")]
+        public ConfigBoolOverride startLockedOverride = ConfigBoolOverride.UseConfig;
+
+        [Tooltip("Which side of THIS door counts as FRONT for Forward-style rotating doors. Use Config takes " +
+                 "the DoorConfig's Invert Forward Side; Force On/Off override it for this door only - handy " +
+                 "when one prefab sharing a config was modelled with its pivot the other way round, or one " +
+                 "placed instance is mirrored. The FRONT/BACK gizmo and the side probe reflect the result.")]
+        public ConfigBoolOverride invertForwardSideOverride = ConfigBoolOverride.UseConfig;
+
+        /// <summary>Per-door override of a DoorConfig bool: keep the config's value, or force it.</summary>
+        public enum ConfigBoolOverride
+        {
+            UseConfig = 0,
+            ForceOff = 1,
+            ForceOn = 2
+        }
+
         [Tooltip("The actual door mesh GameObject to animate (for single doors)")]
         public Transform doorMesh;
 
@@ -70,6 +88,143 @@ namespace AutomaticDoorSystem
                 && dynamicObject.asset == null;
         }
 
+        private static bool Resolve(ConfigBoolOverride overrideValue, bool configValue)
+        {
+            switch (overrideValue)
+            {
+                case ConfigBoolOverride.ForceOn: return true;
+                case ConfigBoolOverride.ForceOff: return false;
+                default: return configValue;
+            }
+        }
+
+        /// <summary>What the baker bakes as InvertForwardSide: the config's flag unless overridden here.</summary>
+        public bool EffectiveInvertForwardSide =>
+            Resolve(invertForwardSideOverride, doorConfig != null && doorConfig.invertForwardSide);
+
+        /// <summary>What the baker bakes as the initial lock state: the config's flag unless overridden here.</summary>
+        public bool EffectiveStartLocked =>
+            Resolve(startLockedOverride, doorConfig != null && doorConfig.startLocked);
+
+        /// <summary>
+        /// Root-local point the approach-side split plane passes through: the mean of the assigned
+        /// panel pivots (hinges sit on the doorway; sliding panels sit in it). Falls back to the
+        /// root origin when no panel is assigned. Baked into DoorComponent.SidePlaneLocalOrigin.
+        /// </summary>
+        public Vector3 SidePlaneLocalOrigin
+        {
+            get
+            {
+                var isDouble = doorConfig != null && doorConfig.doorCount == DoorConfig.DoorCountEnum.Double;
+                var sum = Vector3.zero;
+                var count = 0;
+
+                if (isDouble)
+                {
+                    Accumulate(leftDoorMesh, ref sum, ref count);
+                    Accumulate(rightDoorMesh, ref sum, ref count);
+                }
+                else
+                {
+                    Accumulate(doorMesh, ref sum, ref count);
+                }
+
+                return count == 0 ? Vector3.zero : sum / count;
+            }
+        }
+
+        private void Accumulate(Transform panel, ref Vector3 sum, ref int count)
+        {
+            if (panel == null) return;
+            sum += transform.InverseTransformPoint(panel.position);
+            count++;
+        }
+
+        /// <summary>World position of <see cref="SidePlaneLocalOrigin"/>.</summary>
+        public Vector3 SidePlaneWorldOrigin => transform.TransformPoint(SidePlaneLocalOrigin);
+
+        /// <summary>
+        /// World-space unit direction pointing into this door's FRONT half-space (local +Z, or -Z
+        /// when inverted), i.e. the side the runtime reads as DirectionForward = 1.
+        /// </summary>
+        public Vector3 FrontDirectionWorld
+        {
+            get
+            {
+                var forward = transform.TransformDirection(Vector3.forward);
+                if (forward.sqrMagnitude < 1e-8f) forward = Vector3.forward;
+                forward.Normalize();
+                return EffectiveInvertForwardSide ? -forward : forward;
+            }
+        }
+
+        /// <summary>
+        /// Runtime-identical approach-side test for a world point (see <see cref="DoorSideMath"/>).
+        /// Returns 1 for FRONT, 0 for BACK, and how deep the point sits in front of the doorway plane
+        /// in the root's local units (negative = behind).
+        /// </summary>
+        public byte DirectionForwardFor(Vector3 worldPoint, out float frontDepth)
+        {
+            var m = transform.worldToLocalMatrix;
+            var worldToDoor = new float4x4(m.GetColumn(0), m.GetColumn(1), m.GetColumn(2), m.GetColumn(3));
+            float3 origin = SidePlaneLocalOrigin;
+            float3 point = worldPoint;
+            frontDepth = DoorSideMath.FrontDepth(in worldToDoor, in origin, in point);
+            return DoorSideMath.DirectionForward(frontDepth, EffectiveInvertForwardSide);
+        }
+
+        /// <summary>Runtime-identical trigger-volume test for a world point.</summary>
+        public bool IsInsideTriggerVolume(Vector3 worldPoint)
+        {
+            var size = new Vector3(3f, 3f, 3f);
+            var worldCenter = transform.position;
+            if (triggerVolumeObject != null)
+            {
+                var volume = triggerVolumeObject.GetComponent<DoorTriggerVolumeAuthoring>();
+                worldCenter = triggerVolumeObject.TransformPoint(volume != null ? volume.volumeCenter : Vector3.zero);
+                if (volume != null) size = volume.volumeSize;
+            }
+            float3 point = worldPoint;
+            float3 center = worldCenter;
+            float3 volumeSize = size;
+            return DoorSideMath.IsInsideVolume(in point, in center, in volumeSize);
+        }
+
+        /// <summary>
+        /// Editor hook: returns a panel's authored (closed) world rotation while an edit-mode
+        /// preview is posing it, so the swing-arc gizmos stay where the door path is instead of
+        /// turning with the panel. Null = not previewing, use the live rotation.
+        /// </summary>
+        public static System.Func<Transform, Quaternion?> AuthoredWorldRotationProvider;
+
+        private static Quaternion ClosedWorldRotation(Transform panel)
+        {
+            var provided = AuthoredWorldRotationProvider?.Invoke(panel);
+            return provided ?? panel.rotation;
+        }
+
+        /// <summary>Scene camera side while gizmos are drawn; FRONT when there is no camera.</summary>
+        private bool CameraIsOnFront()
+        {
+            var camera = Camera.current;
+            return camera == null || DirectionForwardFor(camera.transform.position, out _) == 1;
+        }
+
+        /// <summary>
+        /// True when the approach side decides the swing for this door: rotating, Forward style
+        /// (or BothWay on a single, which the runtime treats as Forward).
+        /// </summary>
+        public bool ApproachSideMatters
+        {
+            get
+            {
+                if (doorConfig == null || doorConfig.doorMovement != DoorConfig.DoorMovementEnum.Rotating) return false;
+                if (doorConfig.openingStyle == DoorConfig.OpeningStyle.Forward) return true;
+                return doorConfig.openingStyle == DoorConfig.OpeningStyle.BothWay &&
+                       doorConfig.doorCount == DoorConfig.DoorCountEnum.Single;
+            }
+        }
+
         /// <summary>
         /// World position the pooled AudioSource is placed at: the audioAnchor override when one is
         /// assigned, otherwise the centre of the trigger volume, which sits in the doorway rather
@@ -121,11 +276,59 @@ namespace AutomaticDoorSystem
 
             DrawTriggerVolumeGizmos();
             DrawAudioAnchorGizmo();
+            if (ApproachSideMatters) DrawFrontSideGizmos();
 
             if (enableDebug)
             {
                 DrawDebugInfo();
             }
+        }
+
+        /// <summary>
+        /// Shows, before play mode, which side of the doorway the viewer is on: the split plane
+        /// and an arrow into each half-space, the one the Scene camera is in drawn solid (green =
+        /// front, red = back), the other faint. Same math as the runtime (full root matrix +
+        /// panel-pivot plane + invert flag), so if the solid arrow is on the wrong side, flip
+        /// Invert Forward Side. The inspector's Edit-Mode Door Test spells out the side in words.
+        /// </summary>
+        private void DrawFrontSideGizmos()
+        {
+            var origin = SidePlaneWorldOrigin;
+            var front = FrontDirectionWorld;
+            var right = transform.TransformDirection(Vector3.right);
+            if (right.sqrMagnitude < 1e-8f) right = Vector3.right;
+            right.Normalize();
+
+            var isDouble = doorConfig.doorCount == DoorConfig.DoorCountEnum.Double;
+            var doorwayWidth = isDouble
+                ? GetDoorWidth(leftDoorMesh) + GetDoorWidth(rightDoorMesh)
+                : GetDoorWidth(doorMesh);
+            var halfWidth = Mathf.Max(doorwayWidth * 0.5f, 0.4f);
+            var reach = Mathf.Clamp(halfWidth, 0.6f, 2f);
+
+            var cameraOnFront = CameraIsOnFront();
+
+            // The split plane, drawn as a line across the doorway at pivot height.
+            Gizmos.color = new Color(1f, 1f, 1f, 0.6f);
+            Gizmos.DrawLine(origin - right * halfWidth, origin + right * halfWidth);
+
+            DrawSideArrow(origin, front * reach, FrontColor, cameraOnFront);
+            DrawSideArrow(origin, -front * reach, BackColor, !cameraOnFront);
+
+        }
+
+        private void DrawSideArrow(Vector3 origin, Vector3 offset, Color color, bool highlighted)
+        {
+            var tip = origin + offset;
+            Gizmos.color = highlighted ? color : new Color(color.r, color.g, color.b, 0.25f);
+            Gizmos.DrawLine(origin, tip);
+            var direction = offset.normalized;
+            var headLength = Mathf.Min(0.25f, offset.magnitude * 0.3f);
+            var headRight = Quaternion.LookRotation(direction) * Quaternion.Euler(0, 180 + 25f, 0) * Vector3.forward;
+            var headLeft = Quaternion.LookRotation(direction) * Quaternion.Euler(0, 180 - 25f, 0) * Vector3.forward;
+            Gizmos.DrawLine(tip, tip + headRight * headLength);
+            Gizmos.DrawLine(tip, tip + headLeft * headLength);
+            if (highlighted) Gizmos.DrawWireSphere(tip, headLength * 0.35f);
         }
 
         private void DrawAudioAnchorGizmo()
@@ -240,90 +443,81 @@ namespace AutomaticDoorSystem
         }
 #endif
 
+        private static readonly Color FrontColor = Color.green;
+        private static readonly Color BackColor = Color.red;
+
+        /// <summary>
+        /// The swing path(s), drawn from the CLOSED rotation so they stay fixed while the preview
+        /// animates the panel. Forward-style doors show only the swing a player on the Scene
+        /// camera's side would trigger - green when that is the front, red when it is the back -
+        /// so what you see is what "Open" in the inspector (and the runtime) will do from where
+        /// you stand. OneWay (red) and double BothWay (cyan) swing a fixed way and show that.
+        /// </summary>
         private void DrawRotatingDoorGizmos(bool isDouble)
         {
             if (doorConfig == null) return;
 
+            var style = doorConfig.openingStyle;
+            var sideMatters = ApproachSideMatters;
+            var cameraOnFront = !sideMatters || CameraIsOnFront();
+            var sideColor = cameraOnFront ? FrontColor : BackColor;
+
             if (isDouble)
             {
-                var openingStyle = doorConfig.openingStyle;
-
                 float leftWidth = GetDoorWidth(leftDoorMesh);
                 float rightWidth = GetDoorWidth(rightDoorMesh);
 
-                switch (openingStyle)
+                float leftAngle, rightAngle;
+                Color leftColor, rightColor;
+                switch (style)
                 {
-                    case DoorConfig.OpeningStyle.Forward:
-                        if (leftDoorMesh != null)
-                        {
-                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openForwardAngle, Color.green, "Forward L", true, leftWidth);
-                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openBackwardAngle, Color.red, "Backward L", true, leftWidth);
-                        }
-                        if (rightDoorMesh != null)
-                        {
-                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openForwardAngle, Color.green, "Forward R", false, rightWidth);
-                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openBackwardAngle, Color.red, "Backward R", false, rightWidth);
-                        }
-                        break;
-
                     case DoorConfig.OpeningStyle.BothWay:
-                        if (leftDoorMesh != null)
-                        {
-                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, doorConfig.openForwardAngle, Color.cyan, "Forward L", true, leftWidth);
-                        }
-                        if (rightDoorMesh != null)
-                        {
-                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, doorConfig.openForwardAngle, Color.cyan, "Forward R", false, rightWidth);
-                        }
+                        leftAngle = rightAngle = doorConfig.openForwardAngle;
+                        leftColor = rightColor = Color.cyan;
                         break;
 
                     case DoorConfig.OpeningStyle.OneWay:
+                    {
                         bool useForward = doorConfig.oneWayDirection.z >= 0;
-                        float leftAngle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
-                        float rightAngle = useForward ? doorConfig.openForwardAngle : doorConfig.openBackwardAngle;
-                        Color leftColor = useForward ? new Color(1f, 0.5f, 0f) : Color.magenta; // Orange for backward, magenta for forward
-                        Color rightColor = useForward ? Color.magenta : new Color(1f, 0.5f, 0f); // Opposite of left
-                        string leftLabel = useForward ? "Backward (OneWay)" : "Forward (OneWay)";
-                        string rightLabel = useForward ? "Forward (OneWay)" : "Backward (OneWay)";
+                        leftAngle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
+                        rightAngle = useForward ? doorConfig.openForwardAngle : doorConfig.openBackwardAngle;
+                        leftColor = rightColor = BackColor;
+                        break;
+                    }
 
-                        if (leftDoorMesh != null)
-                        {
-                            DrawRotationArcForDoubleDoor(leftDoorMesh.position, leftDoorMesh.rotation, leftAngle, leftColor, leftLabel + " L", true, leftWidth);
-                        }
-                        if (rightDoorMesh != null)
-                        {
-                            DrawRotationArcForDoubleDoor(rightDoorMesh.position, rightDoorMesh.rotation, rightAngle, rightColor, rightLabel + " R", false, rightWidth);
-                        }
+                    default: // Forward: runtime uses the BACKWARD rotation for a front approach, mirrored on the right.
+                        leftAngle = cameraOnFront ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
+                        rightAngle = leftAngle;
+                        leftColor = rightColor = sideColor;
                         break;
                 }
+
+                if (leftDoorMesh != null)
+                    DrawRotationArcForDoubleDoor(leftDoorMesh.position, ClosedWorldRotation(leftDoorMesh), leftAngle, leftColor, true, leftWidth);
+                if (rightDoorMesh != null)
+                    DrawRotationArcForDoubleDoor(rightDoorMesh.position, ClosedWorldRotation(rightDoorMesh), rightAngle, rightColor, false, rightWidth);
             }
             else
             {
-                var openingStyle = doorConfig.openingStyle;
                 Vector3 doorPosition = doorMesh != null ? doorMesh.position : transform.position;
-                Quaternion doorRotation = doorMesh != null ? doorMesh.rotation : transform.rotation;
+                Quaternion doorRotation = doorMesh != null ? ClosedWorldRotation(doorMesh) : transform.rotation;
                 float singleDoorWidth = GetDoorWidth(doorMesh);
 
-                switch (openingStyle)
+                float angle;
+                Color color;
+                if (style == DoorConfig.OpeningStyle.OneWay)
                 {
-                    case DoorConfig.OpeningStyle.Forward:
-                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openForwardAngle, Color.green, "Forward", singleDoorWidth);
-                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openBackwardAngle, Color.red, "Backward", singleDoorWidth);
-                        break;
-
-                    case DoorConfig.OpeningStyle.OneWay:
-                        bool useForward = doorConfig.oneWayDirection.z >= 0;
-                        float angle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
-                        Color arcColor = useForward ? new Color(1f, 0.5f, 0f) : Color.magenta; // Orange for backward, magenta for forward
-                        string directionLabel = useForward ? "Backward (OneWay)" : "Forward (OneWay)";
-                        DrawRotationArc(doorPosition, doorRotation, angle, arcColor, directionLabel, singleDoorWidth);
-                        break;
-
-                    case DoorConfig.OpeningStyle.BothWay:
-                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openForwardAngle, Color.green, "Forward", singleDoorWidth);
-                        DrawRotationArc(doorPosition, doorRotation, doorConfig.openBackwardAngle, Color.red, "Backward", singleDoorWidth);
-                        break;
+                    bool useForward = doorConfig.oneWayDirection.z >= 0;
+                    angle = useForward ? doorConfig.openBackwardAngle : doorConfig.openForwardAngle;
+                    color = BackColor;
                 }
+                else // Forward, and BothWay (which the runtime treats as Forward on a single)
+                {
+                    angle = cameraOnFront ? doorConfig.openForwardAngle : doorConfig.openBackwardAngle;
+                    color = sideColor;
+                }
+
+                DrawRotationArc(doorPosition, doorRotation, angle, color, singleDoorWidth);
             }
         }
 
@@ -359,66 +553,46 @@ namespace AutomaticDoorSystem
             return 1.5f;
         }
 
-        private void DrawRotationArcForDoubleDoor(Vector3 position, Quaternion rotation, float angle, Color color, string label, bool isLeftDoor, float arcRadius)
+        private void DrawRotationArcForDoubleDoor(Vector3 position, Quaternion rotation, float angle, Color color, bool isLeftDoor, float arcRadius)
         {
-            Gizmos.color = color;
-
-            int segments = 20;
-
-            float actualAngle = isLeftDoor ? -angle : angle;
-            Vector3 startDirection = isLeftDoor ? Vector3.left : Vector3.right;
-
-            for (int i = 0; i < segments; i++)
-            {
-                float currentAngle = (actualAngle / segments) * i;
-                float nextAngle = (actualAngle / segments) * (i + 1);
-
-                Vector3 currentPoint = position + rotation * Quaternion.Euler(0, currentAngle, 0) * startDirection * arcRadius;
-                Vector3 nextPoint = position + rotation * Quaternion.Euler(0, nextAngle, 0) * startDirection * arcRadius;
-
-                Gizmos.DrawLine(currentPoint, nextPoint);
-            }
-
-            Vector3 endPoint = position + rotation * Quaternion.Euler(0, actualAngle, 0) * startDirection * arcRadius;
-
-            Gizmos.color = new Color(color.r, color.g, color.b, 0.7f);
-            Gizmos.DrawLine(position, endPoint);
-
-#if UNITY_EDITOR
-            UnityEditor.Handles.Label(endPoint, $"{label}\n{actualAngle:F0}°");
-#endif
+            DrawSwingArc(position, rotation, isLeftDoor ? Vector3.left : Vector3.right,
+                isLeftDoor ? -angle : angle, color, arcRadius);
         }
 
-        private void DrawRotationArc(Vector3 position, Quaternion rotation, float angle, Color color, string label, float arcRadius)
+        private void DrawRotationArc(Vector3 position, Quaternion rotation, float angle, Color color, float arcRadius)
         {
-            Gizmos.color = color;
-            Gizmos.color = new Color(color.r, color.g, color.b, 0.5f);
-            float doorwayLineLength = arcRadius;
-            Vector3 doorwayDir = rotation * Vector3.forward;
-            Gizmos.DrawLine(position - doorwayDir * doorwayLineLength * 0.5f,
-                           position + doorwayDir * doorwayLineLength * 0.5f);
+            DrawSwingArc(position, rotation, Vector3.right, angle, color, arcRadius);
+        }
 
-            Gizmos.color = color;
-            int segments = 15;
-            float angleStep = angle / segments;
-
-            for (int i = 0; i < segments; i++)
-            {
-                float currentAngle = angleStep * i;
-                float nextAngle = angleStep * (i + 1);
-
-                Vector3 start = position + rotation * Quaternion.Euler(0, currentAngle, 0) * Vector3.right * arcRadius;
-                Vector3 end = position + rotation * Quaternion.Euler(0, nextAngle, 0) * Vector3.right * arcRadius;
-
-                Gizmos.DrawLine(start, end);
-            }
-
-            Vector3 rotatedDir = rotation * Quaternion.Euler(0, angle, 0) * Vector3.right;
-            Vector3 arcEnd = position + rotatedDir * arcRadius;
-            Gizmos.DrawLine(position, arcEnd);
-
+        /// <summary>
+        /// The path a panel sweeps on the ground: a translucent sector with a thick outline at
+        /// the hinge pivot, from the panel's closed edge to its open edge, labelled with the
+        /// angle. Drawn on top of geometry so the floor cannot hide it. Handles-based, editor only.
+        /// </summary>
+        private void DrawSwingArc(Vector3 pivot, Quaternion closedRotation, Vector3 closedEdgeLocal,
+            float angle, Color color, float radius)
+        {
 #if UNITY_EDITOR
-            UnityEditor.Handles.Label(arcEnd, $"{label}\n{angle:F0}°");
+            var up = closedRotation * Vector3.up;
+            var from = closedRotation * closedEdgeLocal;
+            var center = pivot;
+            var end = Quaternion.AngleAxis(angle, up) * from;
+
+            UnityEditor.Handles.zTest = UnityEngine.Rendering.CompareFunction.Always;
+            UnityEditor.Handles.color = new Color(color.r, color.g, color.b, 0.4f);
+            UnityEditor.Handles.DrawSolidArc(center, up, from, angle, radius);
+            UnityEditor.Handles.color = color;
+            UnityEditor.Handles.DrawWireArc(center, up, from, angle, radius, 4f);
+            UnityEditor.Handles.DrawLine(center, center + end * radius, 4f);
+            UnityEditor.Handles.DrawLine(center, center + from * radius, 1.5f);
+
+            UnityEditor.Handles.Label(center + end * radius + up * 0.1f, $"{angle:F0}°",
+                new GUIStyle
+                {
+                    normal = new GUIStyleState { textColor = color },
+                    fontSize = 12,
+                    fontStyle = FontStyle.Bold
+                });
 #endif
         }
 
@@ -549,7 +723,7 @@ namespace AutomaticDoorSystem
                 var animDuration = config.animationDuration;
                 var autoClose = config.autoCloseDelay;
                 var layerMask = config.canOpenLayerMask.value;
-                var locked = config.startLocked;
+                var locked = authoring.EffectiveStartLocked;
 
                 Vector3 triggerSize;
                 Vector3 triggerCenter;
@@ -580,15 +754,19 @@ namespace AutomaticDoorSystem
                     triggerTransform = authoring.transform;
                 }
 
-                var doorAxis = CalculateDoorAxis(authoring.transform);
-
+                // Approach-side detection: the split plane goes through the panel pivots, in the
+                // root's frame, so it follows the door's real rotation and scale (the old yaw-
+                // quantized world axis misread any door turned off a cardinal angle or whose root
+                // sits off the doorway). The panel transforms are declared as dependencies further
+                // down, so moving a hinge rebakes this too.
                 AddComponent(entity, new DoorComponent
                 {
                     DoorId = doorId,
                     Type = doorType,
-                    Axis = doorAxis,
                     AnimationDuration = animDuration,
-                    AutoCloseDelay = autoClose
+                    AutoCloseDelay = autoClose,
+                    SidePlaneLocalOrigin = authoring.SidePlaneLocalOrigin,
+                    InvertForwardSide = (byte)(authoring.EffectiveInvertForwardSide ? 1 : 0)
                 });
 
                 AddComponent(entity, new DoorStateComponent
@@ -717,21 +895,6 @@ namespace AutomaticDoorSystem
                     return DoorType.SlidingSingle;
                 else
                     return DoorType.SlidingDouble;
-            }
-
-            private DoorAxis CalculateDoorAxis(Transform doorTransform)
-            {
-                var eulerY = doorTransform.eulerAngles.y;
-                var normalizedAngle = ((eulerY % 360f) + 360f) % 360f; 
-
-                if (normalizedAngle < 45f || normalizedAngle >= 315f)
-                    return DoorAxis.Z;
-                else if (normalizedAngle >= 45f && normalizedAngle < 135f)
-                    return DoorAxis.X;
-                else if (normalizedAngle >= 135f && normalizedAngle < 225f)
-                    return DoorAxis.NegZ;
-                else
-                    return DoorAxis.NegX;
             }
 
             /// <summary>

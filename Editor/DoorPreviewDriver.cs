@@ -35,6 +35,20 @@ namespace AutomaticDoorSystem.Editor
         {
             EditorApplication.playModeStateChanged += _ => EndPreview();
             AssemblyReloadEvents.beforeAssemblyReload += EndPreview;
+            // The swing-arc gizmos must stay put while a panel is being previewed: hand them the
+            // authored (closed) rotation instead of the live one.
+            DoorAuthoring.AuthoredWorldRotationProvider = AuthoredWorldRotation;
+        }
+
+        private static Quaternion? AuthoredWorldRotation(Transform panel)
+        {
+            foreach (var snapshot in _panels)
+            {
+                if (snapshot.transform != panel) continue;
+                var parentRotation = panel.parent != null ? panel.parent.rotation : Quaternion.identity;
+                return parentRotation * snapshot.localRotation;
+            }
+            return null;
         }
 
         public static bool IsPreviewing(DoorAuthoring door) => _door == door && _door != null;
@@ -138,6 +152,10 @@ namespace AutomaticDoorSystem.Editor
             {
                 _animating = false;
                 _poseIsOpen = _isOpening;
+                // A finished Close stays where the runtime closes to (identity local rotation /
+                // authored slide position). On a door whose authored rotation is off identity that
+                // differs from the authored pose - restoring it here read as "the door jumped open".
+                // The authored pose comes back when the door is deselected.
             }
             SceneView.RepaintAll();
         }

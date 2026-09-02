@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using jeanf.validationTools;
 using UnityEditor;
@@ -23,9 +23,13 @@ namespace AutomaticDoorSystem.Editor
         private SerializedProperty triggerVolumeObjectProp;
         private SerializedProperty doorIdProp;
         private SerializedProperty enableDebugProp;
+        private SerializedProperty invertForwardSideOverrideProp;
+        private SerializedProperty startLockedOverrideProp;
 
         private void OnEnable()
         {
+            invertForwardSideOverrideProp = serializedObject.FindProperty("invertForwardSideOverride");
+            startLockedOverrideProp = serializedObject.FindProperty("startLockedOverride");
             doorConfigProp = serializedObject.FindProperty("doorConfig");
             doorAudioConfigProp = serializedObject.FindProperty("doorAudioConfig");
             audioAnchorProp = serializedObject.FindProperty("audioAnchor");
@@ -50,7 +54,7 @@ namespace AutomaticDoorSystem.Editor
 
         /// <summary>
         /// Heuristic pivot/orientation findings. Logged once per selection so the door "notifies",
-        /// but nothing is ever auto-fixed â€” the inspector asks for human confirmation via the
+        /// but nothing is ever auto-fixed - the inspector asks for human confirmation via the
         /// edit-mode test buttons instead.
         /// </summary>
         private void RefreshPivotWarnings(bool logToConsole)
@@ -68,7 +72,7 @@ namespace AutomaticDoorSystem.Editor
                 Debug.LogWarning(
                     $"[DoorAuthoring] '{door.gameObject.name}' pivot/orientation check found {_pivotWarnings.Count} " +
                     $"possible issue(s):\n- {string.Join("\n- ", _pivotWarnings)}\n" +
-                    "These are heuristics â€” confirm with the edit-mode Open/Close test buttons on the DoorAuthoring " +
+                    "These are heuristics - confirm with the edit-mode Open/Close test buttons on the DoorAuthoring " +
                     "inspector before changing the setup.", door.gameObject);
             }
         }
@@ -96,6 +100,36 @@ namespace AutomaticDoorSystem.Editor
 
             EditorGUILayout.PropertyField(doorIdProp);
 
+            var doorConfig = doorConfigProp.objectReferenceValue as DoorConfig;
+
+            // Panels: conditionally required (depends on the config's door count), so no
+            // [Validation] attribute - the shared helper gives the missing ones the same orange
+            // treatment. Without a config the count is unknown, so all three are offered plainly.
+            if (doorConfig == null)
+            {
+                EditorGUILayout.PropertyField(doorMeshProp);
+                EditorGUILayout.PropertyField(leftDoorMeshProp);
+                EditorGUILayout.PropertyField(rightDoorMeshProp);
+            }
+            else if (doorConfig.doorCount == DoorConfig.DoorCountEnum.Double)
+            {
+                ValidationUi.DrawRequiredField(leftDoorMeshProp,
+                    "A Double config needs BOTH panels - without the left panel nothing animates.");
+                ValidationUi.DrawRequiredField(rightDoorMeshProp,
+                    "A Double config needs BOTH panels - without the right panel nothing animates.");
+            }
+            else
+            {
+                ValidationUi.DrawRequiredField(doorMeshProp,
+                    "A Single config needs the door mesh - without it nothing animates.");
+            }
+
+            EditorGUILayout.PropertyField(triggerVolumeObjectProp);
+
+            // Per-door overrides of two config flags (Use Config / Force Off / Force On).
+            EditorGUILayout.PropertyField(startLockedOverrideProp, new GUIContent("Start Locked"));
+            EditorGUILayout.PropertyField(invertForwardSideOverrideProp, new GUIContent("Invert Forward Side"));
+
             EditorGUILayout.Space();
 
             // Both config assets first: behavior, then audio
@@ -105,8 +139,7 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.PropertyField(audioAnchorProp, new GUIContent("Audio Anchor (Optional)"));
 
             // ValidationDrawer already washes the Behavior Config field orange and states why
-            // when it is unset â€” the help boxes below only add the how-to.
-            var doorConfig = doorConfigProp.objectReferenceValue as DoorConfig;
+            // when it is unset - the help boxes below only add the how-to.
             if (doorConfig == null)
             {
                 EditorGUILayout.HelpBox(
@@ -141,25 +174,6 @@ namespace AutomaticDoorSystem.Editor
 
             bool isDouble = doorConfig.doorCount == DoorConfig.DoorCountEnum.Double;
 
-            // Conditionally required (depends on the config's door count), so no [Validation]
-            // attribute â€” the shared helper gives the missing ones the same orange treatment.
-            if (isDouble)
-            {
-                ValidationUi.DrawRequiredField(leftDoorMeshProp,
-                    "A Double config needs BOTH panels â€” without the left panel nothing animates.");
-                ValidationUi.DrawRequiredField(rightDoorMeshProp,
-                    "A Double config needs BOTH panels â€” without the right panel nothing animates.");
-            }
-            else
-            {
-                ValidationUi.DrawRequiredField(doorMeshProp,
-                    "A Single config needs the door mesh â€” without it nothing animates.");
-            }
-
-            EditorGUILayout.PropertyField(triggerVolumeObjectProp);
-
-            EditorGUILayout.Space();
-
             DrawPivotCheckSection();
             DrawEditModeTestSection(doorConfig, isDouble);
 
@@ -182,6 +196,7 @@ namespace AutomaticDoorSystem.Editor
                 EditorGUILayout.Slider(new GUIContent("Open Forward Angle"), doorConfig.openForwardAngle, 0f, 180f);
                 EditorGUILayout.Slider(new GUIContent("Open Backward Angle"), doorConfig.openBackwardAngle, -180f, 0f);
                 EditorGUILayout.EnumPopup("Opening Style", doorConfig.openingStyle);
+                EditorGUILayout.Toggle("Invert Forward Side", doorConfig.invertForwardSide);
 
                 if (!isDouble && doorConfig.openingStyle == DoorConfig.OpeningStyle.BothWay)
                 {
@@ -337,10 +352,13 @@ namespace AutomaticDoorSystem.Editor
 
             if (!pivotClean)
             {
-                EditorGUILayout.HelpBox(
-                    "Possible pivot/orientation issues (heuristics â€” confirm with the test buttons below " +
-                    "before changing anything):\n\nâ€¢ " + string.Join("\n\nâ€¢ ", _pivotWarnings),
-                    MessageType.Warning);
+                EditorGUILayout.LabelField(
+                    $"{_pivotWarnings.Count} orientation issue(s) - heuristics, confirm with Open/Close below before changing anything:",
+                    EditorStyles.wordWrappedMiniLabel);
+                foreach (var warning in _pivotWarnings)
+                {
+                    EditorGUILayout.HelpBox(warning, MessageType.Warning);
+                }
             }
 
             foreach (var finding in _colliderFindings)
@@ -371,7 +389,7 @@ namespace AutomaticDoorSystem.Editor
 
             if (Application.isPlaying)
             {
-                EditorGUILayout.HelpBox("The edit-mode test is unavailable in play mode â€” the door systems are live.", MessageType.Info);
+                EditorGUILayout.HelpBox("The edit-mode test is unavailable in play mode - the door systems are live.", MessageType.Info);
                 return;
             }
 
@@ -387,46 +405,42 @@ namespace AutomaticDoorSystem.Editor
             }
 
             // The preview replays DoorAnimationSystem's math on the authored transforms, so an
-            // erratic pivot misbehaves here exactly as it would in play mode.
-            var isRotating = doorConfig.doorMovement == DoorConfig.DoorMovementEnum.Rotating;
-            var directionMatters = isRotating &&
-                (doorConfig.openingStyle == DoorConfig.OpeningStyle.Forward ||
-                 (isDouble && doorConfig.openingStyle == DoorConfig.OpeningStyle.BothWay));
+            // erratic pivot misbehaves here exactly as it would in play mode. For doors whose
+            // swing depends on the approach side, "Open" takes the side from the Scene camera -
+            // stand where the player would and press it.
+            var directionMatters = door.ApproachSideMatters;
+            var hasCamera = DoorSideProbe.TryEvaluateSceneCamera(door, out var camera);
+            var openFromFront = !directionMatters || !hasCamera || camera.isFront;
 
-            EditorGUILayout.BeginHorizontal();
-            if (directionMatters)
+            using (new EditorGUILayout.HorizontalScope())
             {
-                // "Front" is the side the DETECTION system treats as DirectionForward = 1 â€” the
-                // quantized world axis, exactly what a player walking up in game triggers. Testing
-                // both sides here reproduces the roaming behavior, not just the animation.
-                if (GUILayout.Button("Open From Front")) DoorPreviewDriver.PreviewOpen(door, directionForward: true);
-                if (GUILayout.Button("Open From Back")) DoorPreviewDriver.PreviewOpen(door, directionForward: false);
+                if (GUILayout.Button("Open")) DoorPreviewDriver.PreviewOpen(door, directionForward: openFromFront);
+                if (GUILayout.Button("Close")) DoorPreviewDriver.PreviewClose(door);
             }
-            else
-            {
-                if (GUILayout.Button("Open")) DoorPreviewDriver.PreviewOpen(door);
-            }
-            if (GUILayout.Button("Close")) DoorPreviewDriver.PreviewClose(door);
-
-            GUI.enabled = DoorPreviewDriver.IsPreviewing(door);
-            if (GUILayout.Button("Reset")) DoorPreviewDriver.EndPreview();
-            GUI.enabled = true;
-            EditorGUILayout.EndHorizontal();
 
             if (directionMatters)
             {
-                var front = DoorPivotAnalysis.QuantizedFrontAxis(door.transform);
-                EditorGUILayout.LabelField(
-                    $"Front = {DoorPivotAnalysis.AxisLabel(front)} (the side the detection system reads as forward)",
-                    EditorStyles.miniLabel);
+                DrawRow("Front side",
+                    $"root local {(door.EffectiveInvertForwardSide ? "-Z" : "+Z")} " +
+                    $"({DoorPivotAnalysis.AxisLabel(door.FrontDirectionWorld)}) - green arrow in the Scene view");
+                DrawRow("Scene camera", hasCamera ? $"{camera.SideName} side" : "no Scene view open - Open assumes FRONT");
+                DrawRow("Open swings", $"to the {(openFromFront ? "BACK" : "FRONT")} (away from the camera)");
             }
 
             if (DoorPreviewDriver.IsPreviewing(door))
             {
-                EditorGUILayout.HelpBox(
-                    "Preview active â€” Reset (or deselecting this door) restores the authored pose. " +
-                    "Don't save the scene while the door is posed open.",
-                    MessageType.Info);
+                EditorGUILayout.LabelField(
+                    "Preview active - Close (or deselecting the door) restores the authored pose. Don't save while posed open.",
+                    EditorStyles.wordWrappedMiniLabel);
+            }
+        }
+
+        private static void DrawRow(string label, string value)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(label, EditorStyles.miniLabel, GUILayout.Width(90f));
+                EditorGUILayout.LabelField(value, EditorStyles.wordWrappedMiniLabel);
             }
         }
     }

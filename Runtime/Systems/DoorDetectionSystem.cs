@@ -58,16 +58,28 @@ namespace AutomaticDoorSystem
                 return;
             _detectionAccumulator = 0f;
 
-            var triggerablePositions = _triggerableEntitiesQuery.ToComponentDataArray<LocalToWorld>(Allocator.TempJob);
-            var triggerableLayers = _triggerableEntitiesQuery.ToComponentDataArray<EntityLayerComponent>(Allocator.TempJob);
+            var triggerableTransforms = _triggerableEntitiesQuery.ToComponentDataArray<LocalToWorld>(Allocator.TempJob);
+            var triggerableLayerComponents = _triggerableEntitiesQuery.ToComponentDataArray<EntityLayerComponent>(Allocator.TempJob);
 
-
-            if (triggerablePositions.Length == 0)
+            if (triggerableTransforms.Length == 0)
             {
-                triggerablePositions.Dispose();
-                triggerableLayers.Dispose();
+                triggerableTransforms.Dispose();
+                triggerableLayerComponents.Dispose();
                 return;
             }
+
+            // The per-door evaluation (DoorSideMath.Evaluate) only needs positions and layers, and
+            // keeping it free of ECS types is what lets the editor tools and tests run the exact
+            // same code.
+            var triggerablePositions = new NativeArray<float3>(triggerableTransforms.Length, Allocator.TempJob);
+            var triggerableLayers = new NativeArray<int>(triggerableTransforms.Length, Allocator.TempJob);
+            for (var i = 0; i < triggerableTransforms.Length; i++)
+            {
+                triggerablePositions[i] = triggerableTransforms[i].Position;
+                triggerableLayers[i] = triggerableLayerComponents[i].Layer;
+            }
+            triggerableTransforms.Dispose();
+            triggerableLayerComponents.Dispose();
 
             SetCheckableDoors(ref state);
 
@@ -109,8 +121,8 @@ namespace AutomaticDoorSystem
         [BurstCompile]
         private partial struct DoorDetectionJob : IJobEntity
         {
-            [ReadOnly] public NativeArray<LocalToWorld> TriggerablePositions;
-            [ReadOnly] public NativeArray<EntityLayerComponent> TriggerableLayers;
+            [ReadOnly] public NativeArray<float3> TriggerablePositions;
+            [ReadOnly] public NativeArray<int> TriggerableLayers;
             [ReadOnly] public NativeHashSet<int> CheckableDoorIds;
 
             private void Execute(
@@ -125,80 +137,43 @@ namespace AutomaticDoorSystem
                 if (!CheckableDoorIds.Contains(door.DoorId))
                     return;
 
-                // Center is stored in the door root's local space, so it has to go through the full
-                // transform - adding it to the root position ignores rotation and scale and puts the
-                // volume in the wrong place on any rotated door. The volume test itself stays
-                // world-axis-aligned, matching how Size is authored.
-                var triggerWorldCenter = math.transform(doorTransform.Value, trigger.Center);
+                DoorSideMath.Evaluate(
+                    in doorTransform.Value,
+                    in door.SidePlaneLocalOrigin,
+                    door.InvertForwardSide == 1,
+                    in trigger.Center,
+                    in trigger.Size,
+                    trigger.LayerMask,
+                    in TriggerablePositions,
+                    in TriggerableLayers,
+                    out var insideCount,
+                    out var nearestDirectionForward);
 
-                for (var i = 0; i < TriggerablePositions.Length; i++)
+                state.EntitiesInTrigger = insideCount;
+
+                var isRotating = door.Type == DoorType.RotatingSingle || door.Type == DoorType.RotatingDouble;
+
+                if (insideCount > 0 && state.CurrentState == DoorState.Closed)
                 {
-                    var entityPos = TriggerablePositions[i].Position;
-                    var entityLayer = TriggerableLayers[i].Layer;
+                    // Decided once, from the closed pose, by whoever is nearest the doorway. The
+                    // closing animation reads the same value, so it must not change mid-swing.
+                    if (isRotating)
+                        state.DirectionForward = nearestDirectionForward;
 
-                    int layerBit = 1 << entityLayer;
-                    if ((trigger.LayerMask & layerBit) == 0)
-                        continue;
-
-                    if (IsInsideVolume(entityPos, triggerWorldCenter, trigger.Size))
-                    {
-                        state.EntitiesInTrigger++;
-
-                        if ((door.Type == DoorType.RotatingSingle || door.Type == DoorType.RotatingDouble) &&
-                            state.CurrentState == DoorState.Closed)
-                        {
-                            var directionForward = CalculateApproachDirection(
-                                entityPos,
-                                doorTransform.Position,
-                                door.Axis);
-
-                            state.DirectionForward = directionForward;
-                        }
-                    }
-                }
-
-                if (state.EntitiesInTrigger > 0 && state.CurrentState == DoorState.Closed)
-                {
                     state.PreviousState = state.CurrentState;
                     state.CurrentState = DoorState.Opening;
                     state.StateTimer = 0f;
                     state.ShouldPlayOpenSound = 1;
                 }
-                else if (state.EntitiesInTrigger == 0 && state.CurrentState == DoorState.Open)
+                else if (insideCount == 0 && state.CurrentState == DoorState.Open)
                 {
-                    if (door.Type == DoorType.RotatingSingle || door.Type == DoorType.RotatingDouble)
+                    if (isRotating)
                     {
                         state.PreviousState = state.CurrentState;
                         state.CurrentState = DoorState.Closing;
                         state.StateTimer = 0f;
                         state.ShouldPlayCloseSound = 1;
                     }
-                }
-            }
-
-            [BurstCompile]
-            private bool IsInsideVolume(float3 point, float3 volumeCenter, float3 volumeSize)
-            {
-                var distance = math.abs(point - volumeCenter);
-                var halfSize = volumeSize * 0.5f;
-                return math.all(distance < halfSize);
-            }
-
-            [BurstCompile]
-            private byte CalculateApproachDirection(float3 entityPos, float3 doorPos, DoorAxis axis)
-            {
-                switch (axis)
-                {
-                    case DoorAxis.X:
-                        return (byte)(entityPos.x > doorPos.x ? 1 : 0);
-                    case DoorAxis.Z:
-                        return (byte)(entityPos.z > doorPos.z ? 1 : 0);
-                    case DoorAxis.NegX:
-                        return (byte)(entityPos.x < doorPos.x ? 1 : 0);
-                    case DoorAxis.NegZ:
-                        return (byte)(entityPos.z < doorPos.z ? 1 : 0);
-                    default:
-                        return 1;
                 }
             }
         }

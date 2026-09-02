@@ -31,7 +31,6 @@ namespace AutomaticDoorSystem.Editor
 
             if (isRotating)
             {
-                CheckAxisQuantizationBoundary(door, warnings);
                 CheckSwingDirection(door, warnings);
             }
 
@@ -44,8 +43,8 @@ namespace AutomaticDoorSystem.Editor
                     Mathf.Abs(config.slideOpenOffset.x) < 1e-4f)
                 {
                     warnings.Add(
-                        "Mirrored sliding double with Slide Open Offset X = 0: mirroring negates X only, " +
-                        "so both panels will slide the SAME way instead of apart.");
+                        "Both sliding panels will slide the SAME way (Mirrored style negates X only, and Slide Open " +
+                        "Offset X is 0). Fix: put the travel on the config's Slide Open Offset X.");
                 }
             }
             else
@@ -66,9 +65,9 @@ namespace AutomaticDoorSystem.Editor
             if (panel.parent != null && Quaternion.Angle(panel.parent.rotation, door.transform.rotation) > RotationToleranceDegrees)
             {
                 warnings.Add(
-                    $"{label} '{panel.name}': its parent '{panel.parent.name}' is rotated " +
-                    $"{Quaternion.Angle(panel.parent.rotation, door.transform.rotation):F1}° relative to the door root. " +
-                    "Animation happens in the parent's frame, so the travel/rotation axis will not match the gizmos.");
+                    $"{label} '{panel.name}' animates in a frame rotated {Quaternion.Angle(panel.parent.rotation, door.transform.rotation):F0}° " +
+                    $"from the door root (parent '{panel.parent.name}'), so its travel/rotation axis will not match the gizmos. " +
+                    "Fix: give the parent the same rotation as the door root.");
             }
 
             if (!isRotating) return;
@@ -79,10 +78,9 @@ namespace AutomaticDoorSystem.Editor
             if (closedError > RotationToleranceDegrees)
             {
                 warnings.Add(
-                    $"{label} '{panel.name}': local rotation is {closedError:F1}° away from identity. " +
-                    "The runtime uses identity as the closed pose, so this door will SNAP on its first frame " +
-                    "and swing differently than the gizmos suggest. Bake the rotation into the mesh or " +
-                    "re-parent the panel so its closed local rotation is identity.");
+                    $"{label} '{panel.name}' has a closed local rotation of {closedError:F0}° (the runtime expects 0°), " +
+                    "so it will SNAP on the first frame and swing from the wrong pose. " +
+                    "Fix: bake the rotation into the mesh, or re-parent the panel under a node that carries the rotation.");
             }
 
             // A rotating panel spins around its own pivot: the pivot must sit on the hinge edge,
@@ -93,64 +91,39 @@ namespace AutomaticDoorSystem.Editor
                 if (ratio < CentredPivotRatio)
                 {
                     warnings.Add(
-                        $"{label} '{panel.name}': the mesh is roughly centred on the pivot " +
-                        $"(offset {centerOffsetX:F2}m over a {halfExtentX:F2}m half-width). A rotating panel " +
-                        "should pivot on its hinge edge — a centred pivot makes the door spin in place and " +
-                        "clip through the wall.");
+                        $"{label} '{panel.name}' pivots near its centre (offset {centerOffsetX:F2} m over a {halfExtentX:F2} m half-width), " +
+                        "so it will spin in place and clip through the wall. " +
+                        "Fix: move the pivot to the hinge edge (re-export, or parent the mesh under an offset hinge node).");
                 }
             }
         }
 
         /// <summary>
-        /// The world-space side the detection system treats as "front" (DirectionForward = 1):
-        /// the baker quantizes the root's world yaw into a cardinal axis (DoorBaker.CalculateDoorAxis)
-        /// and CalculateApproachDirection compares player positions along it.
+        /// The world-space direction into the side the detection system treats as "front"
+        /// (DirectionForward = 1): the root's local +Z through its full transform, negated when
+        /// Invert Forward Side is in effect. Split at the panel pivots - see DoorSideMath.
         /// </summary>
-        public static Vector3 QuantizedFrontAxis(Transform doorRoot)
-        {
-            var yaw = ((doorRoot.eulerAngles.y % 360f) + 360f) % 360f;
-            if (yaw < 45f || yaw >= 315f) return Vector3.forward;   // DoorAxis.Z
-            if (yaw < 135f) return Vector3.right;                    // DoorAxis.X
-            if (yaw < 225f) return Vector3.back;                     // DoorAxis.NegZ
-            return Vector3.left;                                     // DoorAxis.NegX
-        }
+        public static Vector3 FrontAxis(DoorAuthoring door) => door.FrontDirectionWorld;
 
         public static string AxisLabel(Vector3 axis)
         {
-            if (axis == Vector3.forward) return "world +Z";
-            if (axis == Vector3.right) return "world +X";
-            if (axis == Vector3.back) return "world -Z";
-            return "world -X";
-        }
-
-        /// <summary>
-        /// A yaw near a 45° bucket edge means a tiny rotation flips which world axis the detection
-        /// system reads approach direction along — and with it, forward/backward.
-        /// </summary>
-        private static void CheckAxisQuantizationBoundary(DoorAuthoring door, List<string> warnings)
-        {
-            var yaw = ((door.transform.eulerAngles.y % 360f) + 360f) % 360f;
-            // Boundaries sit at 45° + 90°k; distance is measured to the nearest one.
-            var wrapped = Mathf.Repeat(yaw - 45f, 90f);
-            var distanceToBoundary = Mathf.Min(wrapped, 90f - wrapped);
-            if (distanceToBoundary < 5f)
-            {
-                warnings.Add(
-                    $"Door root yaw is {yaw:F1}° — within {distanceToBoundary:F1}° of a 45° detection-axis " +
-                    "boundary. The runtime quantizes yaw to a cardinal axis to decide which side counts as " +
-                    "'front', so doors this close to the boundary can flip forward/backward. Rotate the root " +
-                    "to a cardinal-ish angle.");
-            }
+            axis.Normalize();
+            if (Vector3.Dot(axis, Vector3.forward) > 0.999f) return "world +Z";
+            if (Vector3.Dot(axis, Vector3.right) > 0.999f) return "world +X";
+            if (Vector3.Dot(axis, Vector3.back) > 0.999f) return "world -Z";
+            if (Vector3.Dot(axis, Vector3.left) > 0.999f) return "world -X";
+            return $"world ({axis.x:F2}, {axis.y:F2}, {axis.z:F2})";
         }
 
         /// <summary>
         /// Replays the full runtime chain for a player approaching each side of the door —
-        /// CalculateApproachDirection (via the quantized axis) picking DirectionForward, the
-        /// animation system's target rotation for that direction, and the panel's hinge-extent
-        /// swing — and flags any side where the door would open TOWARD the player. Forward-style
-        /// doors (and singles with BothWay, which the runtime treats as Forward) are expected to
-        /// open away from whichever side you approach; OneWay and double BothWay open a fixed way
-        /// by design and are skipped.
+        /// DoorSideMath picking DirectionForward (root local +Z through the panel pivots, honouring
+        /// Invert Forward Side), the animation system's target rotation for that direction, and
+        /// the panel's hinge-extent swing — and flags any side where the door would open TOWARD
+        /// the player. Forward-style doors (and singles with BothWay, which the runtime treats as
+        /// Forward) are expected to open away from whichever side you approach; OneWay and double
+        /// BothWay open a fixed way by design and are skipped. When this fires on BOTH sides the
+        /// fix is Invert Forward Side (config or per-door override), not the model.
         /// </summary>
         private static void CheckSwingDirection(DoorAuthoring door, List<string> warnings)
         {
@@ -160,7 +133,7 @@ namespace AutomaticDoorSystem.Editor
             if (config.openingStyle == DoorConfig.OpeningStyle.OneWay) return;
             if (isDouble && config.openingStyle == DoorConfig.OpeningStyle.BothWay) return;
 
-            var front = QuantizedFrontAxis(door.transform);
+            var front = FrontAxis(door);
             var forward = Quaternion.Euler(0f, config.openForwardAngle, 0f);
             var backward = Quaternion.Euler(0f, config.openBackwardAngle, 0f);
 
@@ -212,10 +185,9 @@ namespace AutomaticDoorSystem.Editor
             if (Vector3.Dot(openEdgeWorld, playerSide) > 0.3f)
             {
                 warnings.Add(
-                    $"{label} '{panel.name}': approaching from the {sideName} ({AxisLabel(playerSide.normalized)} side), " +
-                    "the runtime would swing this panel TOWARD the player instead of away. The panel's hinge side " +
-                    "(or a left/right mesh swap on a double) is inverted for this door's orientation — verify with " +
-                    "'Open From Front' / 'Open From Back' below.");
+                    $"{label} '{panel.name}' swings TOWARD a player coming from the {sideName} ({AxisLabel(playerSide.normalized)}). " +
+                    "Fix: if both sides are reported, turn on Invert Forward Side (config or per-door override); " +
+                    "if only one side, the hinge side is off (or left/right panels are swapped on a double).");
             }
         }
 
@@ -237,9 +209,8 @@ namespace AutomaticDoorSystem.Editor
             if (Mathf.Abs(leftDir) > 0.01f && Mathf.Abs(rightDir) > 0.01f && leftDir * rightDir > 0f)
             {
                 warnings.Add(
-                    "Left and right panels both extend the SAME way along the door's X axis. Double-door " +
-                    "panels should extend toward each other from opposite hinges — the meshes are likely " +
-                    "swapped (left/right assigned backwards) or one panel is flipped.");
+                    "Left and right panels both extend the SAME way along the door's X axis instead of toward each other. " +
+                    "Fix: swap the Left/Right Door Mesh assignments, or un-flip the mirrored panel.");
             }
         }
 
