@@ -1,3 +1,4 @@
+using jeanf.scenemanagement;
 using jeanf.validationTools;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -55,6 +56,12 @@ namespace AutomaticDoorSystem
                  "at this transform instead of the trigger volume centre. Its position is baked, so move it " +
                  "in edit mode, not at runtime.")]
         public Transform audioAnchor;
+
+        [Tooltip("Where the player is dropped when the room this door closes gets locked at the end of a scenario. " +
+                 "Place it on the SAFE side of the doorway, ideally inside the trigger volume so the door opens for " +
+                 "them. The room itself is deduced from Door Id (it is the room number). Leave empty on doors that " +
+                 "guard nothing.")]
+        public Transform exitAnchor;
 
         /// <summary>
         /// Panel wiring must match the assigned config: a Double config needs BOTH panels, a Single
@@ -250,6 +257,53 @@ namespace AutomaticDoorSystem
             return triggerVolumeObject.TransformPoint(localCenter);
         }
 
+        #region Zone evacuation
+
+        /// <summary>
+        /// This door offers a way out as soon as an anchor is placed. Which room it frees is not
+        /// authored here: <see cref="doorId"/> is that room's number, resolved at runtime.
+        /// </summary>
+        public bool HasZoneExit => exitAnchor != null;
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Editor-only preview of what the runtime will deduce: the Zone asset whose zoneNb equals
+        /// this door's id. Scans the project's Zone assets, so it works even when no volume
+        /// SubScene is open. Null when no room carries that number (a corridor-to-corridor door).
+        /// </summary>
+        public Zone ResolveZoneFromDoorId()
+        {
+            if (doorId == 0) return null;
+            return ZonesByNumber().TryGetValue(doorId, out var zone) ? zone : null;
+        }
+
+        // The gizmo asks on every repaint, so the project-wide asset scan is cached and only
+        // refreshed every few seconds - long enough to pick up a zoneNb edited in another window.
+        private static readonly System.Collections.Generic.Dictionary<int, Zone> ZoneNumberCache = new();
+        private static double _zoneCacheTime = double.MinValue;
+
+        private static System.Collections.Generic.Dictionary<int, Zone> ZonesByNumber()
+        {
+            var now = UnityEditor.EditorApplication.timeSinceStartup;
+            if (now - _zoneCacheTime < 5d && ZoneNumberCache.Count > 0) return ZoneNumberCache;
+
+            _zoneCacheTime = now;
+            ZoneNumberCache.Clear();
+
+            var guids = UnityEditor.AssetDatabase.FindAssets("t:Zone");
+            for (var i = 0; i < guids.Length; i++)
+            {
+                var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
+                var zone = UnityEditor.AssetDatabase.LoadAssetAtPath<Zone>(path);
+                if (zone != null && zone.zoneNb != 0) ZoneNumberCache.TryAdd(zone.zoneNb, zone);
+            }
+
+            return ZoneNumberCache;
+        }
+#endif
+
+        #endregion
+
         private void OnDrawGizmosSelected()
         {
             if (doorConfig == null)
@@ -285,6 +339,7 @@ namespace AutomaticDoorSystem
 
             DrawTriggerVolumeGizmos();
             DrawAudioAnchorGizmo();
+            DrawZoneEvacuationGizmos();
             if (ApproachSideMatters) DrawFrontSideGizmos();
 
             if (enableDebug)
@@ -349,6 +404,39 @@ namespace AutomaticDoorSystem
             Gizmos.DrawWireSphere(audioAnchor.position, 0.15f);
 #if UNITY_EDITOR
             UnityEditor.Handles.Label(audioAnchor.position + Vector3.up * 0.25f, "Audio Anchor");
+#endif
+        }
+
+        /// <summary>
+        /// The evacuation anchor, drawn as soon as one is assigned: where the player lands, which
+        /// way they face, and which zone this exit frees. It turns orange outside the trigger
+        /// volume - the door would not even see the player it just received, and would stay shut
+        /// in their face.
+        /// </summary>
+        private void DrawZoneEvacuationGizmos()
+        {
+            if (exitAnchor == null) return;
+
+            var position = exitAnchor.position;
+            var reachable = IsInsideTriggerVolume(position);
+            var color = reachable ? new Color(.2f, .8f, 1f) : new Color(1f, .5f, .1f);
+
+            Gizmos.matrix = Matrix4x4.identity;
+            Gizmos.color = color;
+            Gizmos.DrawWireSphere(position, .35f);
+            Gizmos.DrawLine(position, position + Vector3.up * 1.7f);
+            Gizmos.DrawRay(position + Vector3.up * .1f, exitAnchor.forward * .6f);
+            Gizmos.DrawLine(position, GetAudioAnchorPosition());
+
+#if UNITY_EDITOR
+            var warning = reachable
+                ? string.Empty
+                : "\nOUTSIDE the trigger volume: the door will not open for the player dropped here.";
+            var room = ResolveZoneFromDoorId();
+            UnityEditor.Handles.color = color;
+            UnityEditor.Handles.Label(position + Vector3.up * 1.9f,
+                $"Zone exit (door {doorId})\nfrees: " +
+                $"{(room != null ? room.zoneName : "<no zone carries this door number>")}{warning}");
 #endif
         }
 
@@ -824,6 +912,8 @@ namespace AutomaticDoorSystem
                     AnchorLocalPosition = audioAnchorLocal
                 });
 
+                BakeZoneExits(authoring, entity);
+
                 var transformData = CalculateTransformData(authoring, config);
                 AddComponent(entity, transformData);
 
@@ -925,6 +1015,27 @@ namespace AutomaticDoorSystem
                     return default;
                 }
                 return dynamicObject.asset;
+            }
+
+            /// <summary>
+            /// Bakes the authored exit anchor into a <see cref="DoorZoneExit"/>, so SceneManagement
+            /// can read it once the SubScene's GameObjects are gone. Nothing is added when the door
+            /// has no anchor, so doors that guard nothing stay as light as before. The room served
+            /// is NOT baked: it is deduced at runtime from the door id.
+            /// </summary>
+            private void BakeZoneExits(DoorAuthoring authoring, Entity entity)
+            {
+                if (!authoring.HasZoneExit) return;
+
+                DependsOn(authoring.exitAnchor);
+
+                var localForward = authoring.transform.InverseTransformDirection(authoring.exitAnchor.forward);
+
+                AddComponent(entity, new DoorZoneExit
+                {
+                    ExitLocalPosition = authoring.transform.InverseTransformPoint(authoring.exitAnchor.position),
+                    ExitLocalForward = math.normalizesafe(localForward, new float3(0f, 0f, 1f))
+                });
             }
 
             private (float3 size, float3 center, byte hasData) ExtractColliderData(Transform panelTransform)

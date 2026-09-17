@@ -25,9 +25,11 @@ namespace AutomaticDoorSystem.Editor
         private SerializedProperty enableDebugProp;
         private SerializedProperty invertForwardSideOverrideProp;
         private SerializedProperty startLockedOverrideProp;
+        private SerializedProperty exitAnchorProp;
 
         private void OnEnable()
         {
+            exitAnchorProp = serializedObject.FindProperty("exitAnchor");
             invertForwardSideOverrideProp = serializedObject.FindProperty("invertForwardSideOverride");
             startLockedOverrideProp = serializedObject.FindProperty("startLockedOverride");
             doorConfigProp = serializedObject.FindProperty("doorConfig");
@@ -137,6 +139,8 @@ namespace AutomaticDoorSystem.Editor
             EditorGUILayout.PropertyField(doorConfigProp, new GUIContent("Behavior Config"));
             EditorGUILayout.PropertyField(doorAudioConfigProp, new GUIContent("Audio Config"));
             EditorGUILayout.PropertyField(audioAnchorProp, new GUIContent("Audio Anchor (Optional)"));
+
+            DrawZoneEvacuationSection();
 
             // ValidationDrawer already washes the Behavior Config field orange and states why
             // when it is unset - the help boxes below only add the how-to.
@@ -441,6 +445,43 @@ namespace AutomaticDoorSystem.Editor
             {
                 EditorGUILayout.LabelField(label, EditorStyles.miniLabel, GUILayout.Width(90f));
                 EditorGUILayout.LabelField(value, EditorStyles.wordWrappedMiniLabel);
+            }
+        }
+
+        /// <summary>
+        /// One transform to place, nothing to wire: the anchor says where the player lands when
+        /// the room this door closes is locked at the end of a scenario. Which room that is comes
+        /// from Door Id - it IS the room number - so the inspector only reports what the runtime
+        /// will deduce.
+        /// </summary>
+        private void DrawZoneEvacuationSection()
+        {
+            var door = target as DoorAuthoring;
+            if (door == null) return;
+
+            // Sits right under Audio Anchor: same kind of optional spot, no section header - the
+            // field's own tooltip carries the explanation.
+            EditorGUILayout.PropertyField(exitAnchorProp, new GUIContent("Exit Anchor (Optional)"));
+
+            if (exitAnchorProp.objectReferenceValue == null) return;
+
+            var room = door.ResolveZoneFromDoorId();
+            if (room == null)
+            {
+                EditorGUILayout.HelpBox(
+                    $"No zone carries the number {door.doorId}, so this anchor is never used. A door's id is the " +
+                    "number of the room it closes (Zone > Zone Nb) - fix the id, or remove the anchor if this door " +
+                    "guards nothing.", MessageType.Warning);
+                return;
+            }
+
+            EditorGUILayout.LabelField("Frees", $"{room.zoneName} (zone nb {room.zoneNb})", EditorStyles.miniLabel);
+
+            if (!door.IsInsideTriggerVolume(door.exitAnchor.position))
+            {
+                EditorGUILayout.HelpBox(
+                    "The anchor sits outside this door's trigger volume: the door will not open for the player " +
+                    "dropped there. Move it closer to the doorway, or enlarge the volume.", MessageType.Info);
             }
         }
     }

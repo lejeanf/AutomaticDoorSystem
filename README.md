@@ -377,6 +377,19 @@ This component has no visible settings - just add it.
 ![Screenshot: 16_dooraudiobridge.png](images/16_dooraudiobridge.png)
 *DoorAudioBridge component (no settings)*
 
+#### Component 5: DoorZoneEvacuationProvider (optional)
+
+**Purpose:** lets SceneManagement use the doors as the way out of a zone it is about to lock at
+the end of a scenario, instead of trapping a player still inside it.
+
+Only needed when doors carry an **Exit Anchor** (`DoorAuthoring`, right under Audio Anchor). Add
+it, tick `Is Debug` if you want to see what each query resolves to, and that is all: it reads the
+anchors baked into the door entities and offers them to `ZoneEvacuationRegistry`. The room each
+door frees comes from its **Door Id**, which is the room number (`Zone.zoneNb`) - nothing else to
+wire.
+
+See `Documentation~/scenario-reset.md` in the Scene Management package for the whole flow.
+
 ### Step 4.3: Verify DoorManagement Setup
 
 Your DoorManagement GameObject should now have all 4 components:

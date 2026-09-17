@@ -130,6 +130,27 @@ namespace AutomaticDoorSystem
         public int Layer; // GameObject layer (0-31)
     }
 
+    /// <summary>
+    /// Where this door drops a player who has to leave the room it closes. Baked from the
+    /// DoorAuthoring's exit anchor; only doors that have one carry it.
+    /// <para>
+    /// The room itself is not stored: a door's <see cref="DoorComponent.DoorId"/> IS the number of
+    /// the room it closes, so DoorZoneEvacuationProvider asks the WorldManager which zone carries
+    /// that number. Doors whose id matches no zone (corridor-to-corridor doors) simply never
+    /// answer an evacuation query.
+    /// </para>
+    /// <para>
+    /// The pose is door-root local, so the provider composes it with the entity's LocalToWorld
+    /// exactly like the trigger volume.
+    /// </para>
+    /// </summary>
+    public struct DoorZoneExit : IComponentData
+    {
+        public float3 ExitLocalPosition;
+        /// <summary>Direction the player faces once placed (door-root local, horizontal).</summary>
+        public float3 ExitLocalForward;
+    }
+
     public enum DoorType : byte
     {
         RotatingSingle = 0,
